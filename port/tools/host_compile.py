@@ -11,7 +11,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 FLAGS = ['-m32', '-std=gnu99', '-fwrapv', '-fno-strict-aliasing', '-w', '-Wno-unknown-pragmas',
          '-DNDOGS_PC=1', '-include', os.path.join(ROOT, 'port', 'include', 'host_compat.h'),
          '-I', os.path.join(ROOT, 'include'), '-I', os.path.join(ROOT, 'port', 'include')]
-DATA_RE = re.compile(r'\b(?:data|bss)_(?:ov[0-9]+_)?([0-9a-f]{8})\b')
+DATA_RE = re.compile(r'\b(?:data|bss)_(?:ov[0-9]+_)?([0-9a-f]{8})(?:__\d+)?\b')
 OBJDIR = None
 
 
@@ -43,7 +43,12 @@ def link(cc, objs, out):
     script = os.path.join(OBJDIR, 'datasyms.ld')
     with open(script, 'w') as f:
         for n in sorted(names):
-            f.write('%s = 0x%s;\n' % (n, n[-8:]))
+            f.write('%s = 0x%s;\n' % (n, re.search(r'([0-9a-f]{8})(?:__\d+)?$', n).group(1)))
+        with open(os.path.join(ROOT, 'port', 'link', 'veneers.txt')) as v:
+            for line in v:
+                if '=' in line and not line.startswith('#'):
+                    a, b = [x.strip() for x in line.split('=')]
+                    f.write('%s = %s;\n' % (a, b))
     rsp = os.path.join(OBJDIR, 'objs.rsp')
     with open(rsp, 'w') as f:
         f.write('\n'.join(o.replace('\\', '/') for o in objs))
@@ -95,6 +100,11 @@ def main():
             f.write(os.path.relpath(p, ROOT) + '\n')
         if args.link:
             ok = [obj_path(p) for p, rc, _ in results if rc == 0]
+            for extra in ('host_cpu.c', 'host_link.c', 'platform_mem.c'):
+                src = os.path.join(ROOT, 'port', 'src', extra)
+                o = os.path.join(OBJDIR, 'port_' + extra[:-2] + '.o')
+                subprocess.run([args.cc] + FLAGS + ['-c', src, '-o', o], check=True)
+                ok.append(o)
             rc, undef, dup, err = link(args.cc, ok, os.path.join(OBJDIR, 'game.elf'))
             f.write('\nlink (%d objects): %s  undefined: %d  multiply defined: %d\n'
                     % (len(ok), 'ok' if rc == 0 else 'failed', len(undef), len(dup)))

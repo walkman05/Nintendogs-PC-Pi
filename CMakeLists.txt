@@ -16,6 +16,7 @@ add_executable(nintendogs_pc
     port/src/main.c
     port/src/platform_mem.c
     port/src/host_cpu.c
+    port/src/host_link.c
 )
 target_include_directories(nintendogs_pc PRIVATE port/include include)
 
