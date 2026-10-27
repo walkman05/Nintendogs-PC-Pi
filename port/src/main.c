@@ -6,6 +6,9 @@
 #include <string.h>
 #include "platform_mem.h"
 #include "loader.h"
+#include "hw.h"
+extern void hw_card_open(const char *data_dir);
+extern void hw_card_open(const char *data_dir);
 
 #ifdef _WIN32
 #include <windows.h>
@@ -25,6 +28,30 @@ static LONG WINAPI on_fault(EXCEPTION_POINTERS *e)
     EXCEPTION_RECORD *r = e->ExceptionRecord;
     fprintf(stderr, "\nfault 0x%08lx at eip=%p, address %p, during %s\n", r->ExceptionCode, r->ExceptionAddress,
             r->NumberParameters > 1 ? (void *)r->ExceptionInformation[1] : 0, stage);
+    {
+        unsigned int *fp = (unsigned int *)e->ContextRecord->Ebp, *sp = (unsigned int *)e->ContextRecord->Esp;
+        int i;
+        if (!IsBadReadPtr(sp, 16))
+            fprintf(stderr, "  stack: %08x %08x %08x %08x\n", sp[0], sp[1], sp[2], sp[3]);
+        if (fp && !IsBadReadPtr(fp, 24))
+            fprintf(stderr, "  caller args: %08x %08x %08x %08x\n", fp[2], fp[3], fp[4], fp[5]);
+        /* NDOGS_PEEK=addr[,addr...]: print words of DS memory at the crash (debugging aid) */
+        if (getenv("NDOGS_PEEK")) {
+            char *p = getenv("NDOGS_PEEK");
+            while (*p) {
+                unsigned int a = (unsigned int)strtoul(p, &p, 16);
+                if (!IsBadReadPtr((void *)a, 16))
+                    fprintf(stderr, "  peek %08x: %08x %08x %08x %08x\n", a, ((unsigned int *)a)[0],
+                            ((unsigned int *)a)[1], ((unsigned int *)a)[2], ((unsigned int *)a)[3]);
+                while (*p == ',' || *p == ' ')
+                    p++;
+            }
+        }
+        for (i = 0; i < 24 && fp && !IsBadReadPtr(fp, 8); i++) {
+            fprintf(stderr, "  frame %2d return 0x%08x\n", i, fp[1]);
+            fp = (unsigned int *)fp[0];
+        }
+    }
     fflush(stderr);
     return EXCEPTION_EXECUTE_HANDLER;
 }
@@ -58,6 +85,10 @@ static DWORD WINAPI watchdog(LPVOID arg)
     for (i = 0; i < 24 && fp && !IsBadReadPtr(fp, 8); i++) {
         fprintf(stderr, "  frame %2d return 0x%08x\n", i, fp[1]);
         fp = (unsigned int *)fp[0];
+    }
+    {
+        extern void host_threads_dump(void);
+        host_threads_dump();
     }
     fflush(stderr);
     ExitProcess(3);
@@ -132,9 +163,12 @@ int main(int argc, char **argv)
     stage = "memory map";
     if (platform_map_ds_memory() != 0)
         return 1;
+    hw_init();
+    hw_trap_install();
     stage = "loading";
     if (ndogs_load_main(dir) != 0)
         return 1;
+    hw_card_open(dir);
 
     /* Entry: SDK work-area word, IRQ handler pointer at the top of DTCM, then the startup calls and main() */
     *(volatile unsigned int *)0x027fff9cu = 0;

@@ -208,6 +208,19 @@ int ndogs_load_main(const char *dir)
         if (m->bss_end > m->bss_start)
             memset((void *)m->bss_start, 0, m->bss_end - m->bss_start);
     }
+    /* boot-time state the DS firmware leaves in the system area: the cartridge header at 0x027ffe00 */
+    {
+        char hp[400];
+        FILE *hf;
+        snprintf(hp, sizeof hp, "%s/host/header.bin", data_dir);
+        hf = fopen(hp, "rb");
+        if (hf) {
+            if (fread((void *)0x027ffe00u, 1, 0x170, hf) != 0x170)
+                fprintf(stderr, "loader: short cartridge header\n");
+            fclose(hf);
+        } else
+            fprintf(stderr, "loader: %s missing - rerun port/tools/extract_rom.py\n", hp);
+    }
     apply_fixes("main", -1, 1);
     apply_fixes("itcm", -1, 1);
     apply_fixes("dtcm", -1, 1);
@@ -236,9 +249,16 @@ int ndogs_load_overlay(int id)
         if (main_fixes[i].overlays & (1u << id))
             patch(&main_fixes[i], id);
     loaded_overlay[id] = 1;
-    for (p = (unsigned int *)m->ctor_start; p < (unsigned int *)m->ctor_end; p++)
-        if (*p >= 0x08000000u || *p < 0x01ff8000u)   /* a host pointer after fix-up */
+    for (p = (unsigned int *)m->ctor_start; p < (unsigned int *)m->ctor_end; p++) {
+        if (*p == 0)
+            continue;
+        if (*p >= 0x01ff8000u && *p < 0x08000000u)  /* still a DS address: no compiled function for it */
+            fprintf(stderr, "loader: %s constructor 0x%08x has no host function\n", name, *p);
+        else
             ((void (*)(void))*p)();
+    }
+    if (getenv("NDOGS_STATUS"))
+        fprintf(stderr, "loader: overlay %d loaded\n", id);
     return 1;
 }
 

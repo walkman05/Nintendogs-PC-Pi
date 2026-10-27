@@ -1,6 +1,14 @@
 #include "ctx.h"
+#ifdef NDOGS_PC
+extern void host_ctx_forget(u32 *ctx);
+#endif
+
+/* OS_InitContext(ctx, entry, stack) */
 void func_0207f980(u32 *param_1, u32 param_2, u32 param_3)
 {
+#ifdef NDOGS_PC
+    host_ctx_forget(param_1);  /* a new thread: the host gives it a fresh fiber on first switch */
+#endif
 #ifdef NDOGS_PC
     param_2 = param_2 + 4;
 #else

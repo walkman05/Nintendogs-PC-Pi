@@ -144,6 +144,12 @@ def main():
                 # dsd has no symbol there (hardware register, system area, mid-object label): the name is the address
                 f.write('%s 0x%s from-name\n' % (s, s[-8:]))
     write_host_tables(args.out, rom_dir, config_dir)
+    # the cartridge header, which the DS boot copies to 0x027ffe00 (the SDK's file system reads it from there)
+    with open(args.rom, 'rb') as f, open(os.path.join(args.out, 'host', 'header.bin'), 'wb') as h:
+        h.write(f.read(0x200))
+    # where the ROM is: the PC build serves cartridge reads from it (the path is recorded, the ROM isn't copied)
+    with open(os.path.join(args.out, 'host', 'rom_path.txt'), 'w') as f:
+        f.write(os.path.abspath(args.rom) + '\n')
     print('data symbols referenced by the C: %d, located: %d, from name only: %d' % (len(used), len(used) - len(missing),
                                                                              len(missing)))
     for s in missing:

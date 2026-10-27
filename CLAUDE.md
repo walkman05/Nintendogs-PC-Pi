@@ -53,8 +53,22 @@ map at the real addresses (`port/src/platform_mem.c`, I/O region as plain RAM fo
 `host_functab` from `port/tools/gen_functab.py`; `extracted/host/` tables from extract_rom.py), replays the ROM's
 startup and calls the game's main(). Overlays load through FS_LoadOverlay (src hook -> `ndogs_load_overlay`).
 `NDOGS_WATCHDOG=<s>` prints the main thread's backtrace after <s> seconds; resolve it with the `.map` artifact.
-Status: main() runs into OS_Init (func_02080164) and waits in the PXI/IPCSYNC handshake with the ARM7
-(func_0206cf00, register 0x04000180) - the next step is the hardware layer (milestone 4).
+Status: the game runs its main loop at 60 fps (3D command stream and sound commands every frame); nothing is
+drawn yet (milestone 5).
+
+## Hardware layer (milestone 4)
+- `port/src/hw_trap.c`: DS register pages (0x04000000-0x04001fff, 0x04100000) are inaccessible; a fault gives
+  the address and direction, the model refreshes/handles the register, the instruction re-runs single-stepped.
+  Host code uses `HostIoRead/Write*` (same model, no fault). gdb can't be used past the first trap: use the
+  crash/watchdog backtraces (`port/tools/addr2func.py <map>`), `NDOGS_STATUS=1`, `NDOGS_IOLOG=1/2`, `NDOGS_PEEK`.
+- `port/src/hw.c`: register model (IPC sync/FIFO, IME/IE/IF, divider/sqrt, DMA immediate/card/3D-FIFO, timers,
+  keys, GXSTAT), ARM7 stand-in over PXI (SPI devices 4/6/8/9, RTC 5 with host time, sound 7 acknowledged),
+  interrupt delivery at CPSR unmask / halt / register writes, IRQ-exit thread reschedule, real-time 60 Hz VBlank.
+  `hw_gx_command()` is the 3D command sink for the renderer.
+- `port/src/hw_card.c`: game card reads from the user's ROM (path in extracted/host/rom_path.txt).
+- `port/src/host_threads.c`: SDK threads as host fibers (OS_Save/LoadContext, OS_InitContext hook).
+- Porting hazards found and fixed: adjacent locals used as one struct (func_02086d58/02086e68), a printf
+  argument supplied through a stack slot (func_0208c5b4); more of these likely exist.
 
 ## Build
 ```

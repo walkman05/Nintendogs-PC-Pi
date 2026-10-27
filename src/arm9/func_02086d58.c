@@ -5,8 +5,15 @@ extern void func_02087008(u32 *a, u8 *b, u32 c);
 u32 func_02086d58(u8 *param_1)
 {
     u32 *puVar3;
+#ifdef NDOGS_PC
+    /* {archive, position} read parameter: neighbouring stack slots on the DS, one struct on the host */
+    struct { u32 arc; vu32 pos; } rp;
+#define local_14 rp.arc
+#define local_10 rp.pos
+#else
     u32 local_14;
     vu32 local_10;
+#endif
     u8 local_18[2];
     u16 uStack_16;
     s32 iVar2;

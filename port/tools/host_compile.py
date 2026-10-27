@@ -29,8 +29,24 @@ def obj_path(path):
     return os.path.join(OBJDIR, rel[:-2] + '.o')
 
 
+HEADERS_MTIME = None
+
+
+def headers_mtime():
+    global HEADERS_MTIME
+    if HEADERS_MTIME is None:
+        hs = [os.path.join(d, f) for base in ('include', os.path.join('port', 'include'))
+              for d, _, fs in os.walk(os.path.join(ROOT, base)) for f in fs]
+        HEADERS_MTIME = max([os.path.getmtime(h) for h in hs] + [os.path.getmtime(os.path.abspath(__file__))])
+    return HEADERS_MTIME
+
+
 def compile_one(cc, path):
-    r = subprocess.run([cc] + FLAGS + ['-c', path, '-o', obj_path(path)], capture_output=True, text=True)
+    o = obj_path(path)
+    # incremental: reuse an object newer than its source and every header (and this script's flags)
+    if OBJDIR and os.path.exists(o) and os.path.getmtime(o) > max(os.path.getmtime(path), headers_mtime()):
+        return path, 0, ''
+    r = subprocess.run([cc] + FLAGS + ['-c', path, '-o', o], capture_output=True, text=True)
     return path, r.returncode, r.stderr
 
 
@@ -119,7 +135,7 @@ def main():
             gen = os.path.join(OBJDIR, 'functab.c')
             subprocess.run([sys.executable, os.path.join(ROOT, 'port', 'tools', 'gen_functab.py'), gen], check=True)
             extras = [os.path.join(ROOT, 'port', 'src', x) for x in
-                      ('host_cpu.c', 'host_link.c', 'host_io.c', 'platform_mem.c', 'loader.c', 'main.c')] + [gen]
+                      ('host_cpu.c', 'host_link.c', 'hw.c', 'hw_trap.c', 'hw_card.c', 'host_threads.c', 'platform_mem.c', 'loader.c', 'main.c')] + [gen]
             hf = os.path.join(ROOT, 'port', 'hostfuncs')
             extras += [os.path.join(hf, x) for x in sorted(os.listdir(hf)) if x.endswith('.c')]
             for src in extras:
