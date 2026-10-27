@@ -29,7 +29,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: nintendogs-pc-linux
-          path: build/objs/nintendogs_pc
+          path: |
+            build/objs/nintendogs_pc
+            build/objs/nintendogs_pc.map
           if-no-files-found: ignore
   game-windows:
     runs-on: windows-latest
@@ -50,5 +52,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: nintendogs-pc-windows
-          path: build/objs/nintendogs_pc.exe
+          path: |
+            build/objs/nintendogs_pc.exe
+            build/objs/nintendogs_pc.exe.map
           if-no-files-found: ignore

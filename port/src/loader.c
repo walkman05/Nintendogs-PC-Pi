@@ -85,7 +85,7 @@ static int read_file(const char *rel, void *dst, unsigned int max)
     char path[400];
     FILE *f;
     long n;
-    snprintf(path, sizeof path, "%s/%s", data_dir, rel);
+    snprintf(path, sizeof path, "%s/rom/%s", data_dir, rel);
     f = fopen(path, "rb");
     if (!f) {
         fprintf(stderr, "loader: cannot open %s\n", path);
