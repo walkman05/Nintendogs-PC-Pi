@@ -10,29 +10,21 @@ if(NOT CMAKE_SIZEOF_VOID_P EQUAL 4)
                     "Windows: -A Win32). Continuing so the shell can be checked, but the game will not run.")
 endif()
 
-option(NDOGS_BUILD_GAME "Compile the decompiled game code (milestone 2)" OFF)
 
-add_executable(nintendogs_pc
-    port/src/main.c
+# Default: memory-map self-test (the full game is linked by port/tools/host_compile.py --link).
+add_executable(nintendogs_memtest
+    port/src/memtest.c
     port/src/platform_mem.c
-    port/src/host_cpu.c
-    port/src/host_link.c
-    port/src/host_io.c
 )
-target_include_directories(nintendogs_pc PRIVATE port/include include)
+target_include_directories(nintendogs_memtest PRIVATE port/include include)
 
 if(MSVC)
-    target_compile_options(nintendogs_pc PRIVATE /W3)
+    target_compile_options(nintendogs_memtest PRIVATE /W3)
 else()
     # Signed overflow wraps like the DS hardware; see CLAUDE.md.
-    target_compile_options(nintendogs_pc PRIVATE -Wall -fwrapv -fno-strict-aliasing)
+    target_compile_options(nintendogs_memtest PRIVATE -Wall -fwrapv -fno-strict-aliasing)
 endif()
 
-if(NDOGS_BUILD_GAME)
-    file(GLOB_RECURSE NDOGS_GAME_SOURCES CONFIGURE_DEPENDS src/*.c port/hostfuncs/*.c)
-    target_sources(nintendogs_pc PRIVATE ${NDOGS_GAME_SOURCES})
-    target_compile_definitions(nintendogs_pc PRIVATE NDOGS_PC=1)
-endif()
 
 # Milestone 1: `cmake --build build --target extract` with -DNDOGS_ROM=<baserom.nds> -DNDOGS_DSD=<dsd executable>
 set(NDOGS_ROM "" CACHE FILEPATH "Your own Nintendogs (Europe) kiosk demo ROM")

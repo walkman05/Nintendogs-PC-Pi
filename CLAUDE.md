@@ -52,4 +52,5 @@ cmake -S . -B build -A Win32                 # Windows (Visual Studio)
 cmake -S . -B build -DCMAKE_C_FLAGS=-m32     # Linux (needs gcc-multilib)
 cmake --build build
 ```
-`-DNDOGS_BUILD_GAME=ON` adds the decompiled sources (expected to fail until milestone 2).
+The CMake target is a memory-map self-test. The game itself: `python port/tools/host_compile.py --link build/objs`
+(CI artifacts `nintendogs-pc-linux` / `nintendogs-pc-windows`), run as `nintendogs_pc --data extracted`.

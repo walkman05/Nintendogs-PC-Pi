@@ -8,7 +8,7 @@ import argparse, collections, os, re, subprocess, sys
 from concurrent.futures import ThreadPoolExecutor
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-FLAGS = ['-m32', '-std=gnu99', '-fwrapv', '-fno-strict-aliasing', '-w', '-Wno-unknown-pragmas',
+FLAGS = ['-m32', '-std=gnu99', '-fwrapv', '-fno-strict-aliasing', '-fpermissive', '-w', '-Wno-unknown-pragmas',
          '-DNDOGS_PC=1', '-include', os.path.join(ROOT, 'port', 'include', 'host_compat.h'),
          '-I', os.path.join(ROOT, 'include'), '-I', os.path.join(ROOT, 'port', 'include')]
 DATA_RE = re.compile(r'\b(?:data|bss)_(?:ov[0-9]+_)?([0-9a-f]{8})(?:__\d+)?\b')

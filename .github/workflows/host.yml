@@ -8,14 +8,14 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y gcc-multilib
       - run: cmake -S . -B build -DCMAKE_C_FLAGS=-m32 -DCMAKE_BUILD_TYPE=Release
       - run: cmake --build build -j
-      - run: ./build/nintendogs_pc
+      - run: ./build/nintendogs_memtest
   windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - run: cmake -S . -B build -A Win32
       - run: cmake --build build --config Release
-      - run: .\build\Release\nintendogs_pc.exe
+      - run: .\build\Release\nintendogs_memtest.exe
   game-compile:
     runs-on: ubuntu-latest
     steps:
