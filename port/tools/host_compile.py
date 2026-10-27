@@ -105,7 +105,7 @@ def main():
             f.write(os.path.relpath(p, ROOT) + '\n')
         if args.link:
             ok = [obj_path(p) for p, rc, _ in results if rc == 0]
-            extras = [os.path.join(ROOT, 'port', 'src', x) for x in ('host_cpu.c', 'host_link.c', 'platform_mem.c')]
+            extras = [os.path.join(ROOT, 'port', 'src', x) for x in ('host_cpu.c', 'host_link.c', 'host_io.c', 'platform_mem.c')]
             hf = os.path.join(ROOT, 'port', 'hostfuncs')
             extras += [os.path.join(hf, x) for x in sorted(os.listdir(hf)) if x.endswith('.c')]
             for src in extras:
