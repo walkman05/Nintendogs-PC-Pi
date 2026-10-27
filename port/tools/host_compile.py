@@ -34,8 +34,15 @@ def compile_one(cc, path):
     return path, r.returncode, r.stderr
 
 
+def windows_target(cc):
+    r = subprocess.run([cc, '-dumpmachine'], capture_output=True, text=True)
+    return 'mingw' in r.stdout or 'cygwin' in r.stdout
+
+
 def link(cc, objs, out):
     """data_/bss_ symbols are absolute at the address their name gives (DS memory is mapped there at run time)."""
+    win = windows_target(cc)
+    us = '_' if win else ''   # 32-bit Windows decorates C symbols with a leading underscore
     names = set()
     hf = os.path.join(ROOT, 'port', 'hostfuncs')
     for p in list(sources()) + [os.path.join(hf, x) for x in os.listdir(hf) if x.endswith('.c')]:
@@ -44,7 +51,7 @@ def link(cc, objs, out):
     script = os.path.join(OBJDIR, 'datasyms.ld')
     with open(script, 'w') as f:
         for n in sorted(names):
-            f.write('%s = 0x%s;\n' % (n, re.search(r'([0-9a-f]{8})(?:__\d+)?$', n).group(1)))
+            f.write('%s%s = 0x%s;\n' % (us, n, re.search(r'([0-9a-f]{8})(?:__\d+)?$', n).group(1)))
     # trampolines become x86 tail jumps (signature-agnostic; a missing target is reported like any other symbol)
     stub = os.path.join(OBJDIR, 'veneers.S')
     with open(os.path.join(ROOT, 'port', 'link', 'veneers.txt')) as v, open(stub, 'w') as f:
@@ -52,13 +59,14 @@ def link(cc, objs, out):
         for line in v:
             if '=' in line and not line.startswith('#'):
                 a, b = [x.strip() for x in line.split('=')]
-                f.write('.globl %s\n%s:\n    jmp %s\n' % (a, a, b))
+                f.write('.globl %s%s\n%s%s:\n    jmp %s%s\n' % (us, a, us, a, us, b))
     subprocess.run([cc, '-m32', '-c', stub, '-o', stub[:-2] + '.o'], check=True)
     objs = list(objs) + [stub[:-2] + '.o']
     rsp = os.path.join(OBJDIR, 'objs.rsp')
     with open(rsp, 'w') as f:
         f.write('\n'.join(o.replace('\\', '/') for o in objs))
-    r = subprocess.run([cc, '-m32', '-no-pie', '@' + rsp, script, '-o', out], capture_output=True, text=True)
+    flags = ['-m32'] + ([] if win else ['-no-pie'])
+    r = subprocess.run([cc] + flags + ['@' + rsp, script, '-o', out], capture_output=True, text=True)
     undef = sorted(set(re.findall(r"undefined reference to `([^']+)'", r.stderr)))
     dup = sorted(set(re.findall(r"multiple definition of `([^']+)'", r.stderr)))
     return r.returncode, undef, dup, r.stderr
@@ -77,6 +85,7 @@ def main():
     ap.add_argument('--jobs', type=int, default=os.cpu_count() or 4)
     ap.add_argument('--out', default='host_compile_report.txt')
     ap.add_argument('--link', help='object directory: keep objects and try linking the whole game')
+    ap.add_argument('--exe', default='nintendogs_pc', help='name of the linked program (in the object directory)')
     args = ap.parse_args()
     if args.link:
         OBJDIR = os.path.abspath(args.link)
@@ -106,7 +115,10 @@ def main():
             f.write(os.path.relpath(p, ROOT) + '\n')
         if args.link:
             ok = [obj_path(p) for p, rc, _ in results if rc == 0]
-            extras = [os.path.join(ROOT, 'port', 'src', x) for x in ('host_cpu.c', 'host_link.c', 'host_io.c', 'platform_mem.c')]
+            gen = os.path.join(OBJDIR, 'functab.c')
+            subprocess.run([sys.executable, os.path.join(ROOT, 'port', 'tools', 'gen_functab.py'), gen], check=True)
+            extras = [os.path.join(ROOT, 'port', 'src', x) for x in
+                      ('host_cpu.c', 'host_link.c', 'host_io.c', 'platform_mem.c', 'loader.c', 'main.c')] + [gen]
             hf = os.path.join(ROOT, 'port', 'hostfuncs')
             extras += [os.path.join(hf, x) for x in sorted(os.listdir(hf)) if x.endswith('.c')]
             for src in extras:
@@ -116,7 +128,7 @@ def main():
                     f.write('port source failed: %s\n%s\n' % (os.path.relpath(src, ROOT), r.stderr[:2000]))
                 else:
                     ok.append(o)
-            rc, undef, dup, err = link(args.cc, ok, os.path.join(OBJDIR, 'game.elf'))
+            rc, undef, dup, err = link(args.cc, ok, os.path.join(OBJDIR, args.exe))
             f.write('\nlink (%d objects): %s  undefined: %d  multiply defined: %d\n'
                     % (len(ok), 'ok' if rc == 0 else 'failed', len(undef), len(dup)))
             for u in undef:

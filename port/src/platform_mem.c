@@ -11,9 +11,15 @@
 #endif
 
 const DsRegion ds_regions[] = {
+    { 0x01ff0000ul, 0x00010000ul, "ITCM" },          /* 0x01ff8000, rounded to 64 KiB for VirtualAlloc */
     { 0x02000000ul, 0x00400000ul, "main RAM" },
-    { 0x027c0000ul, 0x00004000ul, "DTCM" },
-    { 0x037f0000ul, 0x00010000ul, "shared WRAM" },  /* 0x037f8000 rounded to 64 KiB for VirtualAlloc */
+    { 0x027c0000ul, 0x00010000ul, "DTCM" },
+    { 0x027f0000ul, 0x00010000ul, "system area" },   /* 0x027ff000-0x027fffff: SDK shared work area */
+    { 0x037f0000ul, 0x00010000ul, "shared WRAM" },
+    { 0x04000000ul, 0x01000000ul, "I/O (as RAM)" },   /* milestone 3 placeholder: the hardware layer replaces it */
+    { 0x05000000ul, 0x00010000ul, "palette" },
+    { 0x06000000ul, 0x00900000ul, "VRAM" },
+    { 0x07000000ul, 0x00010000ul, "OAM" },
 };
 const int ds_region_count = sizeof(ds_regions) / sizeof(ds_regions[0]);
 

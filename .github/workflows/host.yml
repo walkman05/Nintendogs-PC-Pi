@@ -26,3 +26,29 @@ jobs:
         with:
           name: host-compile-report
           path: host_compile_report.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nintendogs-pc-linux
+          path: build/objs/nintendogs_pc
+          if-no-files-found: ignore
+  game-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW32
+          install: mingw-w64-i686-gcc mingw-w64-i686-python
+      - run: python port/tools/host_compile.py --cc gcc --out host_compile_report_win.txt --link build/objs --exe nintendogs_pc.exe || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: host-compile-report-windows
+          path: host_compile_report_win.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nintendogs-pc-windows
+          path: build/objs/nintendogs_pc.exe
+          if-no-files-found: ignore

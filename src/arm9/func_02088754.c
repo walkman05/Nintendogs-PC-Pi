@@ -3,8 +3,17 @@
 extern int func_02088b6c(u16 *buf, int a, int b);
 extern int func_02088804(u16 *buf);
 
+#ifdef NDOGS_PC
+extern int ndogs_unload_overlay(int id);
+#endif
+
+/* FS_UnloadOverlay(target, id) */
 int func_02088754(int param_1, int param_2)
 {
+#ifdef NDOGS_PC
+    (void)param_1;
+    return ndogs_unload_overlay(param_2);
+#endif
     u16 buf[22];
     int r;
 
