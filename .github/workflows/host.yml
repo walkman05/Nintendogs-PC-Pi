@@ -21,7 +21,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: sudo apt-get update && sudo apt-get install -y gcc-multilib
-      - run: python3 port/tools/host_compile.py --out host_compile_report.txt || true
+      - run: python3 port/tools/host_compile.py --out host_compile_report.txt --link build/objs || true
       - uses: actions/upload-artifact@v4
         with:
           name: host-compile-report

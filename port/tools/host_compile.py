@@ -1,6 +1,7 @@
 """Milestone 2 check: compile every decompiled C file for the 32-bit host, one by one, and summarise the errors.
+With --link, keep the objects and link the whole game, reporting undefined and duplicate symbols.
 
-usage: python port/tools/host_compile.py [--cc gcc] [--jobs N] [--out report.txt]
+usage: python port/tools/host_compile.py [--cc gcc] [--jobs N] [--out report.txt] [--link objdir]
 Exit status 0 only when every file compiles.
 """
 import argparse, collections, os, re, subprocess, sys
@@ -10,6 +11,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 FLAGS = ['-m32', '-std=gnu99', '-fwrapv', '-fno-strict-aliasing', '-w', '-Wno-unknown-pragmas',
          '-DNDOGS_PC=1', '-include', os.path.join(ROOT, 'port', 'include', 'host_compat.h'),
          '-I', os.path.join(ROOT, 'include'), '-I', os.path.join(ROOT, 'port', 'include')]
+DATA_RE = re.compile(r'\b(?:data|bss)_(?:ov[0-9]+_)?([0-9a-f]{8})\b')
+OBJDIR = None
 
 
 def sources():
@@ -19,9 +22,35 @@ def sources():
                 yield os.path.join(dirpath, f)
 
 
+def obj_path(path):
+    if not OBJDIR:
+        return os.devnull
+    rel = os.path.relpath(path, ROOT).replace(os.sep, '_')
+    return os.path.join(OBJDIR, rel[:-2] + '.o')
+
+
 def compile_one(cc, path):
-    r = subprocess.run([cc] + FLAGS + ['-c', path, '-o', os.devnull], capture_output=True, text=True)
+    r = subprocess.run([cc] + FLAGS + ['-c', path, '-o', obj_path(path)], capture_output=True, text=True)
     return path, r.returncode, r.stderr
+
+
+def link(cc, objs, out):
+    """data_/bss_ symbols are absolute at the address their name gives (DS memory is mapped there at run time)."""
+    names = set()
+    for p in sources():
+        with open(p, encoding='utf-8', errors='replace') as f:
+            names.update(m.group(0) for m in DATA_RE.finditer(f.read()))
+    script = os.path.join(OBJDIR, 'datasyms.ld')
+    with open(script, 'w') as f:
+        for n in sorted(names):
+            f.write('%s = 0x%s;\n' % (n, n[-8:]))
+    rsp = os.path.join(OBJDIR, 'objs.rsp')
+    with open(rsp, 'w') as f:
+        f.write('\n'.join(o.replace('\\', '/') for o in objs))
+    r = subprocess.run([cc, '-m32', '-no-pie', '@' + rsp, script, '-o', out], capture_output=True, text=True)
+    undef = sorted(set(re.findall(r"undefined reference to `([^']+)'", r.stderr)))
+    dup = sorted(set(re.findall(r"multiple definition of `([^']+)'", r.stderr)))
+    return r.returncode, undef, dup, r.stderr
 
 
 def category(msg):
@@ -31,11 +60,16 @@ def category(msg):
 
 
 def main():
+    global OBJDIR
     ap = argparse.ArgumentParser()
     ap.add_argument('--cc', default='gcc')
     ap.add_argument('--jobs', type=int, default=os.cpu_count() or 4)
     ap.add_argument('--out', default='host_compile_report.txt')
+    ap.add_argument('--link', help='object directory: keep objects and try linking the whole game')
     args = ap.parse_args()
+    if args.link:
+        OBJDIR = os.path.abspath(args.link)
+        os.makedirs(OBJDIR, exist_ok=True)
     files = list(sources())
     with ThreadPoolExecutor(args.jobs) as ex:
         results = list(ex.map(lambda p: compile_one(args.cc, p), files))
@@ -59,7 +93,18 @@ def main():
         f.write('\nfailing files:\n')
         for p, _ in bad:
             f.write(os.path.relpath(p, ROOT) + '\n')
-    print(open(args.out).read()[:6000])
+        if args.link:
+            ok = [obj_path(p) for p, rc, _ in results if rc == 0]
+            rc, undef, dup, err = link(args.cc, ok, os.path.join(OBJDIR, 'game.elf'))
+            f.write('\nlink (%d objects): %s  undefined: %d  multiply defined: %d\n'
+                    % (len(ok), 'ok' if rc == 0 else 'failed', len(undef), len(dup)))
+            for u in undef:
+                f.write('  undefined %s\n' % u)
+            for d in dup:
+                f.write('  duplicate %s\n' % d)
+            if rc and not undef and not dup:
+                f.write(err[:4000])
+    print(open(args.out).read()[:8000])
     sys.exit(1 if bad else 0)
 
 
