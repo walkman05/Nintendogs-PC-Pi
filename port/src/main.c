@@ -52,7 +52,8 @@ static DWORD WINAPI watchdog(LPVOID arg)
     memset(&c, 0, sizeof c);
     c.ContextFlags = CONTEXT_FULL;
     GetThreadContext(main_thread, &c);
-    fprintf(stderr, "\nwatchdog: main thread in %s, eip=0x%08lx\n", stage, (unsigned long)c.Eip);
+    fprintf(stderr, "\nwatchdog: main thread in %s, eip=0x%08lx (image base %p)\n", stage, (unsigned long)c.Eip,
+            (void *)GetModuleHandleA(0));
     fp = (unsigned int *)c.Ebp;
     for (i = 0; i < 24 && fp && !IsBadReadPtr(fp, 8); i++) {
         fprintf(stderr, "  frame %2d return 0x%08x\n", i, fp[1]);
