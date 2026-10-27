@@ -44,11 +44,16 @@ def link(cc, objs, out):
     with open(script, 'w') as f:
         for n in sorted(names):
             f.write('%s = 0x%s;\n' % (n, re.search(r'([0-9a-f]{8})(?:__\d+)?$', n).group(1)))
-        with open(os.path.join(ROOT, 'port', 'link', 'veneers.txt')) as v:
-            for line in v:
-                if '=' in line and not line.startswith('#'):
-                    a, b = [x.strip() for x in line.split('=')]
-                    f.write('%s = %s;\n' % (a, b))
+    # trampolines become x86 tail jumps (signature-agnostic; a missing target is reported like any other symbol)
+    stub = os.path.join(OBJDIR, 'veneers.S')
+    with open(os.path.join(ROOT, 'port', 'link', 'veneers.txt')) as v, open(stub, 'w') as f:
+        f.write('.text\n')
+        for line in v:
+            if '=' in line and not line.startswith('#'):
+                a, b = [x.strip() for x in line.split('=')]
+                f.write('.globl %s\n%s:\n    jmp %s\n' % (a, a, b))
+    subprocess.run([cc, '-m32', '-c', stub, '-o', stub[:-2] + '.o'], check=True)
+    objs = list(objs) + [stub[:-2] + '.o']
     rsp = os.path.join(OBJDIR, 'objs.rsp')
     with open(rsp, 'w') as f:
         f.write('\n'.join(o.replace('\\', '/') for o in objs))
