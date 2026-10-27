@@ -41,8 +41,10 @@ links the whole game. Status: all 8,311 files compile and the game links with 0 
   BIOS calls, SDK asm, ITCM code). Hardware registers there go through `HostIoRead/Write*` (`port/src/host_io.c`).
 - `port/link/veneers.txt`: the original's linker trampolines, emitted as x86 jump stubs.
 - Data symbols resolve to the address in their name (generated linker script).
-- Known semantic gap: ~620 functions are defined `void` but their callers read r0 (the DS leaves the last call's
-  result there). `port/tools/proto_check.py` lists return-type mismatches; these need PC-side fixes.
+- Return values: 170 functions that left a value in r0 for callers (tail-call results, swpb old bytes, extended
+  loads) now return it explicitly (plain C where the DS object stays identical, else `#ifdef NDOGS_PC`). The rest
+  of what `port/tools/proto_check.py` flags was checked and found unread on the DS (dispatchers overwrite r0).
+  Open: values returned through vtables/callbacks (e.g. func_0207e1ac's target) depend on those callbacks.
 
 ## Build
 ```
