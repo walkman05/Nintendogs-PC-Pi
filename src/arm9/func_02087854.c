@@ -6,9 +6,9 @@ extern void func_02087248(s32 *, s32);
 extern void func_020883c8(s32 *, s32 *);
 extern void func_02087a2c(s32 *);
 extern void func_0207f554(u16 *);
-extern u8 func_020879e4(s32 *, u32);
+extern u32 func_020879e4(s32 *, u32);
 
-u8 func_02087854(s32 *param_1, u32 param_2, u32 param_3, s32 param_4)
+u32 func_02087854(s32 *param_1, u32 param_2, u32 param_3, s32 param_4)
 {
     s32 *iVar4;
     u32 sh;

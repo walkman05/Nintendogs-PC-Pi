@@ -5,7 +5,7 @@ void func_0210f038(void);
 
 typedef struct { u32 w[8]; } Ent;
 
-u16 func_0210ee14(s32 param_1, u32 *param_2, u16 param_3)
+s32 func_0210ee14(s32 param_1, u32 *param_2, u16 param_3)
 {
     u8 *puVar5;
     u16 count;

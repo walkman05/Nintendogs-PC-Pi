@@ -9,9 +9,9 @@ extern void func_020d7804(void);
 extern void func_020d5108(u32 a);
 extern void func_020d511c(u32 a);
 extern void func_020d50f4(u32 a);
-extern void func_020d5488(void);
+extern u32 func_020d5488(void);
 
-void func_020d7f08(void)
+u32 func_020d7f08(void)
 {
     s32 iVar4;
 
@@ -29,5 +29,5 @@ void func_020d7f08(void)
     func_020d511c((u32)func_020d7b48);
     func_020d50f4((u32)func_020d7804);
     *(u16 *)(data_0215ad40 + 300) = 0;
-    func_020d5488();
+    return func_020d5488();
 }

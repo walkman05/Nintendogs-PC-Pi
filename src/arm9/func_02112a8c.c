@@ -1,6 +1,10 @@
 #include "ctx.h"
 
+#ifdef NDOGS_PC
+u16 func_02112a8c(u8 *param_1)
+#else
 void func_02112a8c(u8 *param_1)
+#endif
 {
     s32 aiStack_220[129];
     s32 i;
@@ -20,7 +24,11 @@ void func_02112a8c(u8 *param_1)
     cnt = 0;
     i = 0;
     if (n <= 0) {
+#ifdef NDOGS_PC
+        return cnt;
+#else
         return;
+#endif
     }
     zA = 0;
     zB = 0;
@@ -45,4 +53,7 @@ void func_02112a8c(u8 *param_1)
         i = i + 1;
         q = q + 8;
     } while (i < n);
+#ifdef NDOGS_PC
+    return cnt;
+#endif
 }

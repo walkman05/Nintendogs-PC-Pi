@@ -11,7 +11,7 @@ static inline u8 SwapByte(u32 v, vu8 *p)
     return old;
 }
 
-void func_0208f608(u32 *param_1)
+s32 func_0208f608(u32 *param_1)
 {
     u8 *base;
     u32 z;
@@ -28,4 +28,5 @@ void func_0208f608(u32 *param_1)
     *(u32 *)(base + 16) = z;
     *(u32 *)(base + 20) = z;
     *(u32 *)(base + 24) = (u32)func_01ffe28c;
+    return (s32)base;
 }

@@ -8,12 +8,20 @@ static inline u8 SwapByte(u32 v, vu8 *p)
     return old;
 }
 
+#ifdef NDOGS_PC
+u32 func_02025cb8(u8 *param_1)
+#else
 void func_02025cb8(u8 *param_1)
+#endif
 {
     s32 x;
     u32 q;
     x = *(s32 *)(*(u8 **)(param_1 + 0x9e8) + 8);
     *(u32 *)(param_1 + 0x920) = (u32)(((s64)x * 7380 + 0x800) >> 12);
     q = (__typeof__(q))((u32)(param_1) + (175));
+#ifdef NDOGS_PC
+    return HostSwpb((vu8 *)(param_1 + 175), 2);
+#else
     SwapByte(2, (vu8 *)q); return;
+#endif
 }

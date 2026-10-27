@@ -12,9 +12,17 @@ static inline u8 SwapAt(u8 *base, u32 v)
     return old;
 }
 
+#ifdef NDOGS_PC
+u32 func_02025600(u8 *param_1)
+#else
 void func_02025600(u8 *param_1)
+#endif
 {
     s32 a = *(s32 *)(*(u8 **)(param_1 + 0x9e8) + 8);
     *(s32 *)(param_1 + 0x920) = FX_Mul(a, 0x1cd4);
+#ifdef NDOGS_PC
+    return HostSwpb((vu8 *)(param_1 + 175), 0);
+#else
     SwapAt(param_1, 0); return;
+#endif
 }

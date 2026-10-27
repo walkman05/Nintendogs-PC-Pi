@@ -19,7 +19,11 @@ extern void func_020e6830(void);
 
 #define FXM(x, k) ((s32)(((s64)(s32)(x) * (k) + 0x800) >> 12))
 
+#ifdef NDOGS_PC
+u32 func_020e61e8(u8 *param_1)
+#else
 void func_020e61e8(u8 *param_1)
+#endif
 {
     s32 *iVar7;
     s32 loc[3];
@@ -211,4 +215,8 @@ void func_020e61e8(u8 *param_1)
     iVar6 = func_020c8164(*(u16 *)(param_1 + 0xa0), *(s32 *)(param_1 + 0xf8));
     func_020c6300(param_1, *(s32 *)(param_1 + 0xf8), 0, 0, iVar6, (void *)func_020e69ec, (void *)func_020e69e0,
                   0, (void *)func_020e6834, (void *)func_020e6830);
+#ifdef NDOGS_PC
+    /* DS r0 here is whatever the void func_020c6300 left; callers do not depend on it. */
+    return 0;
+#endif
 }

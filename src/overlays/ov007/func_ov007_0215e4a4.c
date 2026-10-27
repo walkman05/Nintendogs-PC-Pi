@@ -25,7 +25,7 @@ extern s32 func_0206fbc8(u16 v);
 extern BOOL func_0206fb04(s32 id, s32 lang, s32 *a, s32 *b);
 extern void func_02005e78(u8 x, u8 y, const char *fmt, ...);
 
-u8 func_ov007_0215e4a4(u8 line)
+u32 func_ov007_0215e4a4(u8 line)
 {
     s32 a;
     s32 b;

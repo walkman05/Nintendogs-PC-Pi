@@ -19,9 +19,9 @@ extern Obj2 data_02155cf8;
 
 u32 func_0207f2c8(u32 v);
 void func_0207f2d0(u8 *p, u32 v);
-void func_0207f4ac(u8 *p, u32 v);
+u32 func_0207f4ac(u8 *p, u32 v);
 
-void func_020658c0(u32 param_1)
+u32 func_020658c0(u32 param_1)
 {
     Obj *o;
     u32 uVar2;
@@ -47,5 +47,5 @@ void func_020658c0(u32 param_1)
     o->f30 = param_1;
     uVar2 = o->f34 | 8;
     o->f34 = uVar2;
-    func_0207f4ac(o->f3c, uVar2);
+    return func_0207f4ac(o->f3c, uVar2);
 }

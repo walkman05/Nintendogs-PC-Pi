@@ -42,7 +42,11 @@ static inline Slot *GetSlot(u8 *p, s16 sel)
     return (Slot *)(*(u8 **)(p + 0x9e8) + 144 + sel * 60);
 }
 
+#ifdef NDOGS_PC
+s32 func_02023ea0(u8 *param_1)
+#else
 void func_02023ea0(u8 *param_1)
+#endif
 {
     u32 w;
     u32 bv;
@@ -101,6 +105,12 @@ void func_02023ea0(u8 *param_1)
         if (pt != 0) {
             u8 old = pt->cnt[bv];
             pt->cnt[bv] = old + 1;
+#ifdef NDOGS_PC
+            return old; /* DS: swpb leaves the old byte in r0 */
+#endif
         }
     }
+#ifdef NDOGS_PC
+    return 0; /* DS: r0 = the null slot pointer */
+#endif
 }

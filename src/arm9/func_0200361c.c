@@ -4,9 +4,9 @@ extern u32 func_0207d2a4(u32 *p, u32 a);
 extern u32 func_0207dc94(u32 *p, u32 a);
 extern u32 func_0207d51c(u32 *p, u32 a, u32 b);
 extern u32 func_0207dd14(u32 *p, u32 a, u32 b);
-extern void func_0207d56c(u32 a, u32 b, u32 c);
+extern u32 func_0207d56c(u32 a, u32 b, u32 c);
 
-void func_0200361c(u32 *p)
+u32 func_0200361c(u32 *p)
 {
     u32 r4;
     u32 r;
@@ -29,5 +29,5 @@ void func_0200361c(u32 *p)
         r = func_0207dd14(p, r4, 4);
         break;
     }
-    func_0207d56c(r, r4, 1);
+    return func_0207d56c(r, r4, 1);
 }

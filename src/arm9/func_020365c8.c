@@ -3,7 +3,11 @@
 extern u8 *data_0214f464;
 extern s8 data_02143578[];
 
+#ifdef NDOGS_PC
+s32 func_020365c8(u8 *p1, u8 *p2)
+#else
 s16 func_020365c8(u8 *p1, u8 *p2)
+#endif
 {
     s16 idx;
     s16 sv;

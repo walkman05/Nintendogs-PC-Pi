@@ -19,7 +19,11 @@ extern void func_020c51f4(u8 *p);
 extern s32 func_02067c30(void *p);
 extern void func_0209d430(void *p, int v, s32 w);
 
+#ifdef NDOGS_PC
+u32 func_020c49ac(u8 *param_1)
+#else
 void func_020c49ac(u8 *param_1)
+#endif
 {
     s32 *piVar4;
     s32 iVar3;
@@ -85,4 +89,7 @@ void func_020c49ac(u8 *param_1)
         }
     }
     *(T3 *)(param_1 + 0xbc) = *(T3 *)(piVar4 + 0x1e);
+#ifdef NDOGS_PC
+    return (u32)piVar4[0x1e]; /* DS: r0 = first word of the copied T3 */
+#endif
 }

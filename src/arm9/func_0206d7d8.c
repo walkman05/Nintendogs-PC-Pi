@@ -1,9 +1,9 @@
 #include "ctx.h"
 
-extern void func_0206d7a4(void);
+extern s32 func_0206d7a4(void);
 
-void func_0206d7d8(void)
+s32 func_0206d7d8(void)
 {
-    void (*fp)(u32) = (void (*)(u32))func_0206d7a4;
-    fp(39);
+    s32 (*fp)(u32) = (s32 (*)(u32))func_0206d7a4;
+    return fp(39);
 }

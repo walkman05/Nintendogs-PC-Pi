@@ -2,7 +2,7 @@
 
 extern void func_0202fd8c(void);
 
-void func_0202fd7c(u32 a)
+s32 func_0202fd7c(u32 a)
 {
-    ((void (*)(u32, u32))func_0202fd8c)(a, 0);
+    return ((s32 (*)(u32, u32))func_0202fd8c)(a, 0);
 }

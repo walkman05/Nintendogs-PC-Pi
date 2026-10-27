@@ -4,7 +4,11 @@ extern u8 *data_0215be48;
 extern void func_02117810(void *p);
 extern void func_02108e24(s32 v);
 
+#ifdef NDOGS_PC
+u32 func_02115080(void)
+#else
 void func_02115080(void)
+#endif
 {
     s32 iVar1;
     u8 *piVar3;
@@ -26,4 +30,7 @@ void func_02115080(void)
         q = q + 60;
     } while (iVar1 < 3);
     func_02108e24(1);
+#ifdef NDOGS_PC
+    return 1; /* DS: r0 still holds the argument 1 (func_02108e24 leaves it) */
+#endif
 }

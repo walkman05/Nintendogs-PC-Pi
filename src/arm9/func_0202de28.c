@@ -6,7 +6,7 @@ extern u32 func_0202dee4(int p);
 extern int func_0202e318(int a, int b);
 extern u8 func_0202e500(int p, int a, int b);
 
-u8 func_0202de28(int param_1, int param_2)
+s32 func_0202de28(int param_1, int param_2)
 {
     int p1c;
     int p2c;

@@ -2,7 +2,11 @@
 
 extern u8 *volatile data_02159060;
 
+#ifdef NDOGS_PC
+u8 *func_02097b94(u16 param_1, u32 param_2, u32 param_3, u32 param_4, u32 param_5)
+#else
 void func_02097b94(u16 param_1, u32 param_2, u32 param_3, u32 param_4, u32 param_5)
+#endif
 {
     u8 *p = data_02159060;
     s16 v = *(s16 *)(p + 108);
@@ -26,4 +30,7 @@ void func_02097b94(u16 param_1, u32 param_2, u32 param_3, u32 param_4, u32 param
     *(s16 *)(data_02159060 + 156) = -1;
     *(u32 *)(data_02159060 + 0xa0) = 0;
     *(u32 *)(data_02159060 + 0xa4) = 0;
+#ifdef NDOGS_PC
+    return data_02159060;
+#endif
 }

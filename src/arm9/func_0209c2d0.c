@@ -3,7 +3,7 @@
 extern u8 *data_0214f130;
 extern u8 data_0212fd50[];
 
-u8 func_0209c2d0(s32 p)
+u32 func_0209c2d0(s32 p)
 {
     u8 *g = data_0214f130;
     u8 *q = g + 0x2c;

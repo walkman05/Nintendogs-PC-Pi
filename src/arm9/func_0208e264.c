@@ -4,7 +4,7 @@
 extern u8 *data_02159028;
 extern u64 func_0205e270(u32 a, u32 b);
 
-u8 func_0208e264(u32 p)
+u32 func_0208e264(u32 p)
 {
     u8 sum;
     u8 *w;

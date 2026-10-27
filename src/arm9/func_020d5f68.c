@@ -1,7 +1,7 @@
 #include "ctx.h"
 extern u64 func_02080858(void);
 extern u64 func_0205e074(u64 a, u32 c, u32 d);
-u16 func_020d5f68(void)
+u32 func_020d5f68(void)
 {
     u64 uVar1;
     u64 uVar2;

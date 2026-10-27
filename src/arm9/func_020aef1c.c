@@ -3,7 +3,7 @@
 extern void *func_01ffdb08(s32 x);
 extern s32 func_020946ac(s32 a, s32 b);
 
-void func_020aef1c(u8 *param_1, s32 param_2)
+s32 func_020aef1c(u8 *param_1, s32 param_2)
 {
     s32 cnt;
     s32 i;
@@ -23,4 +23,5 @@ void func_020aef1c(u8 *param_1, s32 param_2)
         t = cnt;
     }
     *(s16 *)(param_1 + 0x10c) = (s16)t;
+    return t;
 }

@@ -1,5 +1,5 @@
 #include "ctx.h"
-u8 func_02022d28(u8 *param_1)
+u32 func_02022d28(u8 *param_1)
 {
     s32 v = *(s16 *)(param_1 + 0xf0);
     u32 a = (v >= 91 && v < 111) ? 1 : 0;

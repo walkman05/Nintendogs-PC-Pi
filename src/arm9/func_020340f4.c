@@ -7,7 +7,11 @@ extern s32 func_020aaeb8(u8 *a, s32 b);
 extern void func_020bbe14(s32 a, s32 b);
 extern u8 *func_020bc3c4(void);
 
+#ifdef NDOGS_PC
+s32 func_020340f4(u8 *param_1)
+#else
 void func_020340f4(u8 *param_1)
+#endif
 {
     s32 iVar3;
     s32 bVar1;
@@ -16,7 +20,11 @@ void func_020340f4(u8 *param_1)
 
     func_020aad40(data_0214f460, (s32)*(s8 *)(param_1 + 0x88));
     if (func_020bc130() == 0) {
+#ifdef NDOGS_PC
+        return 0;
+#else
         return;
+#endif
     }
     bVar1 = 1;
     iVar3 = 0;
@@ -33,4 +41,7 @@ void func_020340f4(u8 *param_1)
         q = (u8 *)((u32)func_020bc3c4() + 136);
         *(vu32 *)(q + 0x6c) = 0;
     }
+#ifdef NDOGS_PC
+    return bVar1 != 0 ? 0 : iVar4;
+#endif
 }

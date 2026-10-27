@@ -19,7 +19,11 @@ extern void func_0209d430(s32 *a, s32 b, s32 c);
 extern void func_020c5fbc(s32 a);
 extern void func_02044b58(void);
 
+#ifdef NDOGS_PC
+s32 func_020c0610(s32 param_1)
+#else
 void func_020c0610(s32 param_1)
+#endif
 {
     s32 iVar1;
     u8 *iVar2;
@@ -39,7 +43,11 @@ void func_020c0610(s32 param_1)
     func_020c0948(param_1);
     func_020c0778(param_1);
     if (((*(u16 *)(data_02159444 + 0x84) & 1) != 0) && (*(s32 *)(data_02159468 + 0x24) == 0)) {
+#ifdef NDOGS_PC
+        return 0; /* DS: r0 = the zero just tested */
+#else
         return;
+#endif
     }
     func_020bfb2c(iVar1, aiStack_38, data_02142978, data_02142974, data_02142970, aiStack_20);
     if (*(s32 *)(iVar2 + 0x1c) == 0) {
@@ -53,4 +61,7 @@ void func_020c0610(s32 param_1)
     func_0209d430((s32 *)(param_1 + 400), 4, iVar1);
     func_020c5fbc(param_1);
     func_02044b58();
+#ifdef NDOGS_PC
+    return 0x03000000; /* DS: func_02044b58 always leaves r0 = 3 << 24 */
+#endif
 }

@@ -9,9 +9,9 @@ extern u32 data_ov001_0215e210;
 extern u32 data_ov001_0215e228;
 extern u32 data_ov001_0215e240;
 extern void func_0205f050();
-extern void func_0208c87c(int *p, void *buf);
+extern s32 func_0208c87c(int *p, void *buf);
 
-void func_ov001_0215de94(int *param_1, int param_2, int param_3, u32 param_4)
+s32 func_ov001_0215de94(int *param_1, int param_2, int param_3, u32 param_4)
 {
   char buf[76];
 
@@ -37,5 +37,5 @@ void func_ov001_0215de94(int *param_1, int param_2, int param_3, u32 param_4)
     func_0205f050(buf + 10, 64, &data_ov001_0215e240, buf, param_2);
     break;
   }
-  func_0208c87c(param_1, buf + 10);
+  return func_0208c87c(param_1, buf + 10);
 }

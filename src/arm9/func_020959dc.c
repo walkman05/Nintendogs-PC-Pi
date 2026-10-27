@@ -2,7 +2,7 @@
 
 extern void func_02097608(u32 a);
 
-void func_020959dc(void)
+s32 func_020959dc(void)
 {
-    ((void (*)(u32))func_02097608)(1);
+    return ((s32 (*)(u32))func_02097608)(1);
 }

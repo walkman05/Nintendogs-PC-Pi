@@ -4,9 +4,9 @@ typedef struct { u32 w[3]; } T3;
 
 extern int data_0214f464;
 extern void func_01ff832c(u32 a, void *b, void *c, void *d);
-extern void func_02009bd0(void *a, void *b);
+extern s32 func_02009bd0(void *a, void *b);
 
-void func_02036a88(int param_1, int param_2, int *param_3, int *param_4, s16 *param_5)
+s32 func_02036a88(int param_1, int param_2, int *param_3, int *param_4, s16 *param_5)
 {
     s32 mode;
     s16 sVar1;
@@ -51,5 +51,5 @@ b3:
         *(T3 *)param_4 = cp;
     }
 tail:
-    func_02009bd0(param_4, (void *)(param_1 + 0x2e8));
+    return func_02009bd0(param_4, (void *)(param_1 + 0x2e8));
 }

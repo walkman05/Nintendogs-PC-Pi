@@ -1,7 +1,7 @@
 #include "ctx.h"
-extern void func_0207de78(u32 *p, u32 a, s32 b);
-extern void func_0207ddfc(u32 *p, u32 a, s32 b);
-void func_0207dd14(u8 *param_1, u32 param_2, s32 param_3)
+extern void *func_0207de78(u32 *p, u32 a, s32 b);
+extern void *func_0207ddfc(u32 *p, u32 a, s32 b);
+void *func_0207dd14(u8 *param_1, u32 param_2, s32 param_3)
 {
     u32 uVar1;
     u32 *p;
@@ -11,8 +11,7 @@ void func_0207dd14(u8 *param_1, u32 param_2, s32 param_3)
     }
     uVar1 = (param_2 + 3) & 0xfffffffc;
     if (param_3 >= 0) {
-        func_0207de78(p, uVar1, param_3);
-        return;
+        return func_0207de78(p, uVar1, param_3);
     }
-    func_0207ddfc(p, uVar1, -param_3);
+    return func_0207ddfc(p, uVar1, -param_3);
 }

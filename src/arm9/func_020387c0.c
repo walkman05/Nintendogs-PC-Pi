@@ -3,7 +3,7 @@
 extern u8 data_02136a14[];
 
 /* the first parameter (r0) is reused as the loop counter, so the counter takes r0 */
-void func_020387c0(u32 p1, s32 p2)
+u32 func_020387c0(u32 p1, s32 p2)
 {
     s32 v = *(s32 *)(*(u32 *)(p1 + 0x9e8) + 12);
     u8 *b;
@@ -22,8 +22,9 @@ void func_020387c0(u32 p1, s32 p2)
     do {
         s16 e = *(s16 *)(b + p1 * 2 + 108);
         if (e >= 0 && e <= p2) {
-            return;
+            return p1;
         }
         p1 = (s16)(p1 - 1);
     } while ((s32)p1 > 0);
+    return p1;
 }

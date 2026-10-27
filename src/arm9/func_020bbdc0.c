@@ -1,9 +1,9 @@
 #include "ctx.h"
 
 extern u8 *data_02159464;
-extern void func_020ced70(u8 *a);
+extern s32 func_020ced70(u8 *a);
 
-void func_020bbdc0(void)
+s32 func_020bbdc0(void)
 {
-    ((void (*)(u8 *))func_020ced70)(data_02159464 + 0x144);
+    return ((s32 (*)(u8 *))func_020ced70)(data_02159464 + 0x144);
 }

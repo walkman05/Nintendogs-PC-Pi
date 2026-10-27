@@ -56,7 +56,7 @@ extern void func_02067e68(const VecFx32 *a, const VecFx32 *b, VecFx32 *c);    /*
 extern s32 func_020c8164(u16 a, s32 b);
 extern void func_020c6300(Obj *p, s32 a, VecFx32 *b, VecFx32 *c, ...);
 extern fx32 func_0206782c(fx32 a);                                           /* FX_Sqrt */
-extern void func_0209cef4(void *a, s32 b, fx32 c);
+extern u32 func_0209cef4(void *a, s32 b, fx32 c);
 extern void func_020e79a0(void);
 extern void func_020e78b0(void);
 extern void func_020e789c(void);
@@ -76,7 +76,7 @@ static inline void VEC_Set(VecFx32 *a, fx32 x, fx32 y, fx32 z)
     a->z = z;
 }
 
-void func_020e71ec(Obj *p)
+u32 func_020e71ec(Obj *p)
 {
     VecFx32 right;
     VecFx32 up;
@@ -213,5 +213,5 @@ void func_020e71ec(Obj *p)
     }
     p->xac = 2000 - FX_MUL(func_02067898(p->pos.y, 0x9f80), 1000);
     VEC_Set(&p->model->scale, p->xac, p->xac, p->xac);
-    func_0209cef4(p->x190, 4, w->rate);
+    return func_0209cef4(p->x190, 4, w->rate);
 }

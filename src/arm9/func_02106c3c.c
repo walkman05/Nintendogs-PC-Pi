@@ -2,7 +2,7 @@
 extern u8 *data_02159030;
 extern void func_02090cac(void);
 
-void func_02106c3c(s32 param_1)
+u32 func_02106c3c(s32 param_1)
 {
     u32 a = 999;
     u32 b = 999;
@@ -59,5 +59,5 @@ c16:
     a = 0x59a;
     b = 0;
 tail:
-    ((void (*)(u32, u32, u32))func_02090cac)(*(u32 *)(data_02159030 + 4), a, b);
+    return ((u32 (*)(u32, u32, u32))func_02090cac)(*(u32 *)(data_02159030 + 4), a, b);
 }

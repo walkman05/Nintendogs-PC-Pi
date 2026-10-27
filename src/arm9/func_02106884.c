@@ -5,9 +5,9 @@ extern u32 data_0215942c;
 extern u32 data_02159030;
 s32 func_01ffdb08(s32 v);
 u8 *func_0202817c(s32 v);
-void func_02090cac(u32 a, u32 b, u32 c);
+u32 func_02090cac(u32 a, u32 b, u32 c);
 
-void func_02106884(u8 *param_1)
+u32 func_02106884(u8 *param_1)
 {
     s32 r4;
     u32 uVar3;
@@ -52,5 +52,5 @@ sw:
         uVar3 = 0x57f;
         break;
     }
-    func_02090cac(*(u32 *)(*(u8 **)&data_02159030 + 4), uVar3, 0);
+    return func_02090cac(*(u32 *)(*(u8 **)&data_02159030 + 4), uVar3, 0);
 }

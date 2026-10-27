@@ -2,7 +2,7 @@
 
 extern u16 data_0213b84c[];
 
-void func_0202707c(u8 *p, s32 param_2)
+u32 func_0202707c(u8 *p, s32 param_2)
 {
     s16 s = *(s16 *)(p + 0xf0);
     s32 b;
@@ -36,4 +36,5 @@ E:
             *(s16 *)(p + 0xfa) = (s16)param_2;
         }
     }
+    return (u32)p;
 }

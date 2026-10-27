@@ -3,7 +3,7 @@
 extern u32 data_0212a968[];
 extern s32 func_02067898(s32 a, s32 b);
 
-u16 func_02068078(s32 p1, s32 p2)
+u32 func_02068078(s32 p1, s32 p2)
 {
     s32 iVar4;
     s32 iVar5;

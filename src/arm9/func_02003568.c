@@ -4,9 +4,9 @@ extern u32 func_0207d2a4(u32 *p, u32 a);
 extern u32 func_0207dc94(u32 *p, u32 a);
 extern u32 func_0207d51c(u32 *p, u32 a, u32 b);
 extern u32 func_0207dd14(u32 *p, u32 a, u32 b);
-extern void func_0207dd68(u32 a, u32 b, u32 c);
+extern u32 func_0207dd68(u32 a, u32 b, u32 c);
 
-void func_02003568(u32 *param_1)
+s32 *func_02003568(u32 *param_1)
 {
     u32 iVar1;
     u32 uVar2;
@@ -29,5 +29,5 @@ void func_02003568(u32 *param_1)
         iVar1 = func_0207dd14(param_1, uVar2, 4);
         break;
     }
-    func_0207dd68(iVar1, uVar2, 1);
+    return (s32 *)func_0207dd68(iVar1, uVar2, 1);
 }

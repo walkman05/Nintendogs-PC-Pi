@@ -3,7 +3,11 @@
 extern s32 func_02067898(s32 a, s32 b);
 extern void func_0209cef4(void *p, s32 a, s32 b);
 
+#ifdef NDOGS_PC
+s32 func_020eef24(u8 *param_1)
+#else
 void func_020eef24(u8 *param_1)
+#endif
 {
   s32 *piVar5;
   s32 iVar4;
@@ -31,4 +35,7 @@ void func_020eef24(u8 *param_1)
   }
   func_0209cef4(param_1 + 400, 0, iVar2 >> 5);
   piVar5[1] = piVar5[0];
+#ifdef NDOGS_PC
+  return piVar5[0];
+#endif
 }

@@ -10,11 +10,11 @@ extern s32 func_02067df0(VecFx32 *a, VecFx32 *b);
 extern void func_02067d04(VecFx32 *a, VecFx32 *b, VecFx32 *c);
 extern void func_02067af0(VecFx32 *a, VecFx32 *b);
 extern void func_01ff810c(s32 *a, s32 *b, s32 *c);
-extern void func_0209d4b0(s32 *a, s32 b);
+extern u32 func_0209d4b0(s32 *a, s32 b);
 
 #define W(p, off) (*(s32 *)((u8 *)(p) + (off)))
 
-void func_020bf1ec(u8 *param_1)
+u32 func_020bf1ec(u8 *param_1)
 {
     VecFx32 m[4];
     VecFx32 c4, c5, c6;
@@ -254,5 +254,5 @@ void func_020bf1ec(u8 *param_1)
     *(u16 *)(pp + 0x162) = 6;
     W(pp, 0x164) = 1;
     *(T3 *)(pp + 0x17c) = *(T3 *)(pp + 0xbc);
-    func_0209d4b0((s32 *)(pp + 400), 3);
+    return func_0209d4b0((s32 *)(pp + 400), 3);
 }

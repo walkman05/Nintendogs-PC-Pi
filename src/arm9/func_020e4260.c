@@ -57,7 +57,11 @@ static inline void VEC_Set(VecFx32 *a, s32 x, s32 y, s32 z)
     a->z = z;
 }
 
+#ifdef NDOGS_PC
+u32 func_020e4260(Obj *p)
+#else
 void func_020e4260(Obj *p)
+#endif
 {
     State *st = p->state;
 
@@ -103,4 +107,7 @@ void func_020e4260(Obj *p)
     p->scale.z = p->scale.x;
     p->fac = FX_MUL(p->scale.x, 0xb00);
     VEC_Set(&p->child->scale, p->fac, p->fac, p->fac);
+#ifdef NDOGS_PC
+    return (u32)p->child;
+#endif
 }

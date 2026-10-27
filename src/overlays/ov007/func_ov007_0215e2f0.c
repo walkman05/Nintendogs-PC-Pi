@@ -25,7 +25,7 @@ extern u32 func_0206fbc8(u16 id);
 extern s32 func_0206fb04(u32 a, u32 b, s32 *c, s32 *d);
 extern void func_02005e78(u8 x, u8 y, const void *fmt, ...);
 
-u8 func_ov007_0215e2f0(u8 y)
+u32 func_ov007_0215e2f0(u8 y)
 {
     s32 a;
     s32 b;
