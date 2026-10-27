@@ -1,0 +1,19 @@
+# ROMs, extracted game data and build output: never commit
+*.nds
+*.srl
+*.o
+*.obj
+*.elf
+*.bin
+build/
+out/
+/extracted/
+/assets/
+/rom/
+*.sav
+
+# Editor / OS
+.vs/
+.vscode/
+*.swp
+.DS_Store
