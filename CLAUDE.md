@@ -46,6 +46,16 @@ links the whole game. Status: all 8,311 files compile and the game links with 0 
   of what `port/tools/proto_check.py` flags was checked and found unread on the DS (dispatchers overwrite r0).
   Open: values returned through vtables/callbacks (e.g. func_0207e1ac's target) depend on those callbacks.
 
+## Running (milestone 3)
+`nintendogs_pc --data extracted` (Windows build from CI artifact `nintendogs-pc-windows`). It maps the DS memory
+map at the real addresses (`port/src/platform_mem.c`, I/O region as plain RAM for now), loads main/ITCM/DTCM from
+`extracted/rom`, rewrites code pointers in game data to the compiled C (`port/src/loader.c` + generated
+`host_functab` from `port/tools/gen_functab.py`; `extracted/host/` tables from extract_rom.py), replays the ROM's
+startup and calls the game's main(). Overlays load through FS_LoadOverlay (src hook -> `ndogs_load_overlay`).
+`NDOGS_WATCHDOG=<s>` prints the main thread's backtrace after <s> seconds; resolve it with the `.map` artifact.
+Status: main() runs into OS_Init (func_02080164) and waits in the PXI/IPCSYNC handshake with the ARM7
+(func_0206cf00, register 0x04000180) - the next step is the hardware layer (milestone 4).
+
 ## Build
 ```
 cmake -S . -B build -A Win32                 # Windows (Visual Studio)
