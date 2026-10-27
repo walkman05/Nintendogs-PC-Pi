@@ -32,6 +32,18 @@ fill `extracted/` (git-ignored): `rom/` (arm9/arm7/itcm/dtcm binaries, decompres
 `config/` (symbols, relocations, delinks per module) and `data_symbols.txt` (each data_/bss_ symbol the C uses).
 The ROM must be the European kiosk demo, MD5 a190eca6a61b3c69ce48f076d2445eb8.
 
+## Host compile (milestone 2)
+`python port/tools/host_compile.py --link build/objs` (CI job `game-compile`) compiles every file with gcc -m32 and
+links the whole game. Status: all 8,311 files compile and the game links with 0 undefined symbols.
+- Inline asm: wrapped as `#ifdef NDOGS_PC <C> #else asm #endif`; `port/tools/check_ds_unchanged.py <files>` must
+  report "unchanged" for any edit in `src/`.
+- `port/hostfuncs/`: host-only C for routines with no decompiled C (compiler runtime incl. exact soft float,
+  BIOS calls, SDK asm, ITCM code). Hardware registers there go through `HostIoRead/Write*` (`port/src/host_io.c`).
+- `port/link/veneers.txt`: the original's linker trampolines, emitted as x86 jump stubs.
+- Data symbols resolve to the address in their name (generated linker script).
+- Known semantic gap: ~620 functions are defined `void` but their callers read r0 (the DS leaves the last call's
+  result there). `port/tools/proto_check.py` lists return-type mismatches; these need PC-side fixes.
+
 ## Build
 ```
 cmake -S . -B build -A Win32                 # Windows (Visual Studio)
