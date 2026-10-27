@@ -112,9 +112,7 @@ def main():
                 o = os.path.join(OBJDIR, 'port_' + os.path.basename(src)[:-2] + '.o')
                 r = subprocess.run([args.cc] + FLAGS + ['-c', src, '-o', o], capture_output=True, text=True)
                 if r.returncode:
-                    f.write('port source failed: %s
-%s
-' % (os.path.relpath(src, ROOT), r.stderr[:2000]))
+                    f.write('port source failed: %s\n%s\n' % (os.path.relpath(src, ROOT), r.stderr[:2000]))
                 else:
                     ok.append(o)
             rc, undef, dup, err = link(args.cc, ok, os.path.join(OBJDIR, 'game.elf'))
