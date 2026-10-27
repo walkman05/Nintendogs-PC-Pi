@@ -26,6 +26,12 @@ Two things live here:
 M0 infra (this) · M1 ROM extraction · M2 host compile of all C · M3 memory/overlay loading · M4 hardware layer ·
 M5 boot to main menu · M6 input, audio, polish.
 
+## ROM extraction (milestone 1)
+`python port/tools/extract_rom.py --rom <baserom.nds> --dsd <dsd>` uses AetiasHax/ds-decomp (dsd v0.12.1, MIT) to
+fill `extracted/` (git-ignored): `rom/` (arm9/arm7/itcm/dtcm binaries, decompressed overlays, game files),
+`config/` (symbols, relocations, delinks per module) and `data_symbols.txt` (each data_/bss_ symbol the C uses).
+The ROM must be the European kiosk demo, MD5 a190eca6a61b3c69ce48f076d2445eb8.
+
 ## Build
 ```
 cmake -S . -B build -A Win32                 # Windows (Visual Studio)

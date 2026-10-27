@@ -30,3 +30,15 @@ if(NDOGS_BUILD_GAME)
     target_sources(nintendogs_pc PRIVATE ${NDOGS_GAME_SOURCES})
     target_compile_definitions(nintendogs_pc PRIVATE NDOGS_PC=1)
 endif()
+
+# Milestone 1: `cmake --build build --target extract` with -DNDOGS_ROM=<baserom.nds> -DNDOGS_DSD=<dsd executable>
+set(NDOGS_ROM "" CACHE FILEPATH "Your own Nintendogs (Europe) kiosk demo ROM")
+set(NDOGS_DSD "" CACHE FILEPATH "ds-decomp (dsd) executable")
+find_package(Python3 COMPONENTS Interpreter)
+if(Python3_FOUND)
+    add_custom_target(extract
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/port/tools/extract_rom.py --rom "${NDOGS_ROM}" --dsd "${NDOGS_DSD}"
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        COMMENT "Extracting game data from your ROM into extracted/ (git-ignored)"
+        VERBATIM)
+endif()
