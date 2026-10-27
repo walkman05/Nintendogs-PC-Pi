@@ -169,6 +169,10 @@ int main(int argc, char **argv)
     if (ndogs_load_main(dir) != 0)
         return 1;
     hw_card_open(dir);
+    {
+        extern void video_init(void);
+        video_init();
+    }
 
     /* Entry: SDK work-area word, IRQ handler pointer at the top of DTCM, then the startup calls and main() */
     *(volatile unsigned int *)0x027fff9cu = 0;

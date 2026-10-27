@@ -10,6 +10,10 @@
 #define R32(a) (*(volatile u32 *)(a))
 
 extern void hw_page_open(u32 addr, int open);
+static int video_pending, vblank_pending;
+extern void video_frame(void);
+extern void video_vblank(void);
+extern u32 window_keys(void);
 static u32 current_line(void);
 
 u32 hw_irq_count[32], hw_pxi_msgs;
@@ -208,11 +212,11 @@ static int dma_ok(u32 a)
 /* 3D geometry commands (FIFO 0x04000400 and the command ports 0x04000440-0x040005ff): counted for now, rendered
  * by the 3D engine in milestone 5. */
 u32 hw_gx_words;
+#include "ds_video.h"
 void hw_gx_command(u32 port, u32 value)
 {
-    (void)port;
-    (void)value;
     hw_gx_words++;
+    gx_command(port, value);
 }
 
 extern void hw_card_start(void);
@@ -300,8 +304,8 @@ void hw_io_prepare_read(u32 addr)
         R16(0x04000100 + t * 4) = (u16)hw.timer[t];
         break;
     }
-    case 0x04000130: /* KEYINPUT: nothing pressed */
-        R16(0x04000130) = 0x03ff;
+    case 0x04000130: /* KEYINPUT: from the window's keyboard */
+        R16(0x04000130) = (u16)(window_keys() & 0x03ff);
         break;
     case 0x04000180: /* IPCSYNC */
         R32(0x04000180) = (R32(0x04000180) & ~0xfu) | hw.arm7_sync;
@@ -323,8 +327,8 @@ void hw_io_prepare_read(u32 addr)
             hw_raise_irq(1u << 18);
         break;
     }
-    case 0x04000600: /* GXSTAT: geometry engine idle, FIFO empty */
-        R32(0x04000600) = (R32(0x04000600) & 0xc0000000u) | 0x06000000u;
+    case 0x04000600: /* GXSTAT: from the 3D engine (stack levels; FIFO empty, never busy) */
+        R32(0x04000600) = (R32(0x04000600) & 0xc0000000u) | gx_status();
         break;
     default:
         break;
@@ -334,6 +338,10 @@ void hw_io_prepare_read(u32 addr)
 void hw_io_written(u32 addr)
 {
     u32 a = addr & ~3u;
+    if (a - 0x04000400u < 0x200u) { /* geometry FIFO and command ports */
+        hw_gx_command(a, R32(a));
+        return;
+    }
     switch (a) {
     case 0x04000180: { /* IPCSYNC: the ARM7 answers each value the ARM9 shows with the next one */
         u32 out = (R32(0x04000180) >> 8) & 0xf;
@@ -370,6 +378,13 @@ void hw_io_written(u32 addr)
         do_dma((int)((a - 0x040000b8) / 12), 0);
         do_dma((int)((a - 0x040000b8) / 12), 7);
         break;
+    case 0x04000240: case 0x04000244: case 0x04000248: { /* VRAMCNT A-D, E-G (+WRAMCNT), H-I */
+        static const u16 reg[9] = { 0x240, 0x241, 0x242, 0x243, 0x244, 0x245, 0x246, 0x248, 0x249 };
+        int b;
+        for (b = 0; b < 9; b++)
+            vram_cnt_written(b, R8(0x04000000u + reg[b]));
+        break;
+    }
     case 0x040001a4: /* ROMCTRL: bit 31 starts a card command */
         if (R32(0x040001a4) & 0x80000000u) {
             int ch;
@@ -400,6 +415,10 @@ void hw_io_after_if_write(void)
 void hw_init(void)
 {
     memset(&hw, 0, sizeof hw);
+    {
+        extern u32 watch_addr;
+        watch_addr = getenv("NDOGS_WATCH") ? (u32)strtoul(getenv("NDOGS_WATCH"), 0, 16) & ~3u : 0;
+    }
     hw_iolog = getenv("NDOGS_IOLOG") ? atoi(getenv("NDOGS_IOLOG")) : 0;
     hw_status = getenv("NDOGS_STATUS") != 0;
     /* The ARM7 publishes the PXI channels it serves in shared memory (0x027ffc00 + 0x388 + 4 * ARM7); the ARM9
@@ -485,8 +504,17 @@ void hw_irq_poll(void)
         in_irq = 0;
         irq_exit_reschedule();
     }
-    if (!in_irq && !hw_in_exception())
-        irq_exit_reschedule();  /* a switch left pending by an interrupt taken inside a register access */
+    if (!in_irq && !hw_in_exception()) {
+        if (vblank_pending) {
+            vblank_pending = 0;
+            video_vblank();
+        }
+        if (video_pending) {
+            video_pending = 0;
+            video_frame();
+        }
+        irq_exit_reschedule();
+    }  /* a switch left pending by an interrupt taken inside a register access */
 }
 
 /* ---- time: frames -----------------------------------------------------------------------------------------------
@@ -495,7 +523,7 @@ void hw_irq_poll(void)
  * if DISPSTAT enables it, keeps real-time pace, and delivers it. */
 #ifdef _WIN32
 #include <windows.h>
-static double now_ms(void)
+double now_ms(void)
 {
     static LARGE_INTEGER f;
     LARGE_INTEGER c;
@@ -507,7 +535,7 @@ static double now_ms(void)
 static void sleep_ms(double ms) { if (ms > 1) Sleep((DWORD)ms); }
 #else
 #include <time.h>
-static double now_ms(void)
+double now_ms(void)
 {
     struct timespec t;
     clock_gettime(CLOCK_MONOTONIC, &t);
@@ -527,10 +555,28 @@ static void sleep_ms(double ms)
 u32 hw_frame;
 static double next_vblank;  /* wall-clock time (ms) of the next VBlank */
 #define FRAME_MS (1000.0 / 60.0)
+/* The picture is drawn from line 0, after the VBlank lines (192-262): the game's VBlank handler sets up the
+ * coming frame (screen swap, VRAM banks, capture) first, so the frame is rendered at that point, not at VBlank. */
+#define LINE0_MS (FRAME_MS * 71 / 263)
+static double display_due;
+
+static void display_start(void)
+{
+    display_due = 0;
+    if (hw_in_exception())
+        video_pending = 1;  /* render at the next safe point */
+    else
+        video_frame();
+}
 
 static void vblank_event(void)
 {
     hw_frame++;
+    if (hw_in_exception())
+        vblank_pending = 1;
+    else
+        video_vblank();
+    display_due = now_ms() + LINE0_MS;
     if ((hw_iolog || hw_status) && hw_frame % 60 == 0)
         fprintf(stderr, "frame %u: IME %x IE %08x IF %08x DISPSTAT %04x | irqs vblank %u ipc %u card %u timer0 %u | "
                         "card reads %u, pxi msgs %u | traps %u (3D ports %u), 3D words %u\n", hw_frame,
@@ -544,18 +590,28 @@ static void vblank_event(void)
     hw_page_open(0x04000004, 0);
 }
 
-/* Real-time frame clock: a VBlank happens every 1/60 s of wall-clock time; checked at interrupt points. */
+/* Frame clock. A VBlank happens when the game halts waiting for an interrupt (its frame is done), no sooner than
+ * 1/60 s after the previous one: if the game falls behind, the whole game slows down evenly, the way it would in an
+ * emulator, instead of VBlanks landing in the middle of its frame (the game swaps screens and 3D views in step with
+ * VBlank and assumes each frame fits in one). If the game doesn't halt for a while, a VBlank is raised anyway. */
+#define STALL_MS 100.0
+
+static void next_frame(double t)
+{
+    next_vblank = next_vblank + FRAME_MS > t ? next_vblank + FRAME_MS : t + FRAME_MS;  /* behind: don't catch up */
+    vblank_event();
+}
+
+/* checked at interrupt points */
 void hw_time_check(void)
 {
     double t = now_ms();
     if (next_vblank == 0)
         next_vblank = t + FRAME_MS;
-    if (t >= next_vblank) {
-        next_vblank += FRAME_MS;
-        if (t - next_vblank > 100)
-            next_vblank = t + FRAME_MS;  /* far behind: don't try to catch up */
-        vblank_event();
-    }
+    if (t >= next_vblank + STALL_MS)
+        next_frame(t);
+    if (display_due && t >= display_due)
+        display_start();
 }
 
 /* Scanline (0-262) from the frame clock; VBlank lines are 192-262. */
@@ -568,15 +624,18 @@ static u32 current_line(void)
     return (192 + (u32)(into / FRAME_MS * 263)) % 263;
 }
 
-/* Halt (wait for interrupt): sleep until the next VBlank, then take it. */
+/* Halt (wait for interrupt): finish drawing the current frame, wait for the next VBlank time, then take it. */
 void hw_halt(void)
 {
     double t = now_ms();
     if (next_vblank == 0)
         next_vblank = t + FRAME_MS;
+    if (display_due)
+        display_start();
+    t = now_ms();
     if (next_vblank > t)
         sleep_ms(next_vblank - t);
-    hw_time_check();
+    next_frame(now_ms());
     hw_irq_poll();
 }
 
@@ -614,3 +673,31 @@ static void host_write(u32 addr, u32 value, int size)
 void HostIoWrite32(u32 addr, u32 value) { host_write(addr, value, 4); }
 void HostIoWrite16(u32 addr, u16 value) { host_write(addr, value, 2); }
 void HostIoWrite8(u32 addr, u8 value) { host_write(addr, value, 1); }
+
+/* Register values as last written (for the renderers). */
+void hw_io_snapshot(u8 *io)
+{
+    hw_page_open(0x04000000, 1);
+    hw_page_open(0x04001000, 1);
+    memcpy(io, (const void *)0x04000000, 0x2000);
+    hw_page_open(0x04000000, 0);
+    hw_page_open(0x04001000, 0);
+}
+
+void hw_capture_done(void)
+{
+    hw_page_open(0x04000000, 1);
+    *(volatile u32 *)0x04000064u &= ~0x80000000u;
+    hw_page_open(0x04000000, 0);
+}
+
+/* NDOGS_WATCH debugging: frame, scanline, whether inside the IRQ handler, and the writer's call chain */
+void hw_watch_hit(u32 addr, u32 eip, u32 ebp)
+{
+    u32 *fp = (u32 *)ebp;
+    int i;
+    fprintf(stderr, "watch %08x: frame %u line %u irq %d eip %08x", addr, hw_frame, current_line(), in_irq, eip);
+    for (i = 0; i < 4 && fp; i++, fp = (u32 *)fp[0])
+        fprintf(stderr, " <%08x", fp[1]);
+    fprintf(stderr, "\n");
+}

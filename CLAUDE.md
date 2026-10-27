@@ -24,7 +24,7 @@ Two things live here:
 
 ## Milestones
 M0 infra (this) · M1 ROM extraction · M2 host compile of all C · M3 memory/overlay loading · M4 hardware layer ·
-M5 boot to main menu · M6 input, audio, polish.
+M5 window + rendering (boots to the title) · M6 input, audio, polish.
 
 ## ROM extraction (milestone 1)
 `python port/tools/extract_rom.py --rom <baserom.nds> --dsd <dsd>` uses AetiasHax/ds-decomp (dsd v0.12.1, MIT) to
@@ -63,12 +63,30 @@ drawn yet (milestone 5).
   crash/watchdog backtraces (`port/tools/addr2func.py <map>`), `NDOGS_STATUS=1`, `NDOGS_IOLOG=1/2`, `NDOGS_PEEK`.
 - `port/src/hw.c`: register model (IPC sync/FIFO, IME/IE/IF, divider/sqrt, DMA immediate/card/3D-FIFO, timers,
   keys, GXSTAT), ARM7 stand-in over PXI (SPI devices 4/6/8/9, RTC 5 with host time, sound 7 acknowledged),
-  interrupt delivery at CPSR unmask / halt / register writes, IRQ-exit thread reschedule, real-time 60 Hz VBlank.
+  interrupt delivery at CPSR unmask / halt / register writes, IRQ-exit thread reschedule, 60 Hz VBlank (paced by the game, see M5).
   `hw_gx_command()` is the 3D command sink for the renderer.
 - `port/src/hw_card.c`: game card reads from the user's ROM (path in extracted/host/rom_path.txt).
 - `port/src/host_threads.c`: SDK threads as host fibers (OS_Save/LoadContext, OS_InitContext hook).
 - Porting hazards found and fixed: adjacent locals used as one struct (func_02086d58/02086e68), a printf
   argument supplied through a stack slot (func_0208c5b4); more of these likely exist.
+
+## Video (milestone 5)
+- `port/src/window.c`: one window, top screen above bottom (Win32 GDI, user32/gdi32 loaded at run time so they
+  don't land in the DS address range; Linux is headless for now). Mouse on the bottom screen = stylus; arrows,
+  Z=A, X=B, A=Y, S=X, Q=L, W=R, Enter=Start, Shift=Select. `NDOGS_HEADLESS=1` runs without a window.
+- `port/src/vram.c`: VRAM banks A-I and VRAMCNT. CPU-visible mappings live at their DS address; hidden roles
+  (textures, palettes, extended palettes) in bank storage; a remap moves the contents.
+- `port/src/gpu2d.c` (both 2D engines) and `port/src/gpu3d.c` (geometry + rasteriser), written from GBATEK.
+- `port/src/video.c`: at VBlank the swapped 3D list is rasterised; at "line 0" (after the game's VBlank work) both
+  engines are drawn from a register snapshot, display capture is applied (the game shows 3D on both screens by
+  swapping screens every frame and capturing), and the frame is presented.
+- Frame pacing (`hw.c`): VBlank comes when the game halts for it, at most 60 Hz. The game must finish each frame
+  within one VBlank (screen swap and 3D swap are in step), so when the port is slow the whole game slows down.
+- Debugging: `NDOGS_SHOT=<frame,...>` saves shot_<frame>.bmp, `NDOGS_VLOG=1` logs per-frame render times and
+  display registers, `NDOGS_WATCH=<reg>` logs who writes a register and when.
+- Optimisation: the renderers build at -O2; game code at -O0 (`NDOGS_OPT`): at -O1 some decompiled C relies on
+  undefined behaviour (a file open fails, then func_0208b15c passes NULL to func_02095298).
+Status: boots through the intro to the title ("Please knock!"); about 25 fps there (3D rasteriser ~16 ms/frame).
 
 ## Build
 ```

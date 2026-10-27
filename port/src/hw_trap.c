@@ -32,6 +32,8 @@ static struct {
 } pending;
 
 int hw_iolog;
+u32 watch_addr;
+extern void hw_watch_hit(u32 addr, u32 eip, u32 ebp);
 unsigned hw_trap_count, hw_trap_gx;
 
 extern void hw_io_before_write(u32 addr);
@@ -98,6 +100,8 @@ static LONG CALLBACK on_exception(EXCEPTION_POINTERS *e)
         hw_io_prepare_read(addr);  /* also for writes: read-modify-write instructions read first */
         if (pending.write)
             hw_io_before_write(addr);
+        if (pending.write && watch_addr && (addr & ~3u) == watch_addr)  /* NDOGS_WATCH=<reg>: who writes it, when */
+            hw_watch_hit(addr, (u32)e->ContextRecord->Eip, (u32)e->ContextRecord->Ebp);
         e->ContextRecord->EFlags |= 0x100;  /* single-step the access */
         return EXCEPTION_CONTINUE_EXECUTION;
     }
