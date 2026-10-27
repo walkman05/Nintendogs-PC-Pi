@@ -15,6 +15,7 @@ option(NDOGS_BUILD_GAME "Compile the decompiled game code (milestone 2)" OFF)
 add_executable(nintendogs_pc
     port/src/main.c
     port/src/platform_mem.c
+    port/src/host_cpu.c
 )
 target_include_directories(nintendogs_pc PRIVATE port/include include)
 
