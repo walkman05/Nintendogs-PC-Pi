@@ -65,7 +65,8 @@ def link(cc, objs, out):
     rsp = os.path.join(OBJDIR, 'objs.rsp')
     with open(rsp, 'w') as f:
         f.write('\n'.join(o.replace('\\', '/') for o in objs))
-    flags = ['-m32', '-Wl,-Map=' + out + '.map'] + ([] if win else ['-no-pie'])
+    # fixed load address (no ASLR): keeps the program clear of the DS address range and makes the map usable
+    flags = ['-m32', '-Wl,-Map=' + out + '.map'] + (['-Wl,--disable-dynamicbase'] if win else ['-no-pie'])
     r = subprocess.run([cc] + flags + ['@' + rsp, script, '-o', out], capture_output=True, text=True)
     undef = sorted(set(re.findall(r"undefined reference to `([^']+)'", r.stderr)))
     dup = sorted(set(re.findall(r"multiple definition of `([^']+)'", r.stderr)))

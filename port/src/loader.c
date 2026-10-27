@@ -116,6 +116,21 @@ static Module *module_named(const char *name)
     return 0;
 }
 
+/* Highest function address of a module: anything above is data (rodata/data follow the code). */
+static unsigned int code_end(int module)
+{
+    static unsigned int cache[2];
+    unsigned int end = 0;
+    int i;
+    if (cache[module == -2])
+        return cache[module == -2];
+    for (i = 0; i < host_functab_count; i++)
+        if (host_functab[i].module == module && host_functab[i].ds_addr > end)
+            end = host_functab[i].ds_addr;
+    cache[module == -2] = end;
+    return end;
+}
+
 /* Rewrite one data word: DS code address -> host function, when the target's code is known. */
 static void patch(const Fix *fx, int overlay_now)
 {
@@ -131,8 +146,8 @@ static void patch(const Fix *fx, int overlay_now)
         return;  /* pointer to data: the address is valid as it is */
     if (fn)
         *slot = (unsigned int)fn;
-    else if (fx->target == -1 || fx->target == -2)
-        unresolved++;
+    else if ((fx->target == -1 || fx->target == -2) && fx->to <= code_end(fx->target))
+        unresolved++;  /* inside code but not a known function start; pointers to data stay as they are */
 }
 
 static int apply_fixes(const char *module, int overlay_now, int keep_overlay_refs)
