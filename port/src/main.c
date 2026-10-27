@@ -52,13 +52,10 @@ static DWORD WINAPI watchdog(LPVOID arg)
     memset(&c, 0, sizeof c);
     c.ContextFlags = CONTEXT_FULL;
     GetThreadContext(main_thread, &c);
-    fprintf(stderr, "
-watchdog: main thread in %s, eip=0x%08lx
-", stage, (unsigned long)c.Eip);
+    fprintf(stderr, "\nwatchdog: main thread in %s, eip=0x%08lx\n", stage, (unsigned long)c.Eip);
     fp = (unsigned int *)c.Ebp;
     for (i = 0; i < 24 && fp && !IsBadReadPtr(fp, 8); i++) {
-        fprintf(stderr, "  frame %2d return 0x%08x
-", i, fp[1]);
+        fprintf(stderr, "  frame %2d return 0x%08x\n", i, fp[1]);
         fp = (unsigned int *)fp[0];
     }
     fflush(stderr);
@@ -81,12 +78,9 @@ static void on_alarm(int sig, siginfo_t *si, void *ucv)
     int i;
     (void)sig;
     (void)si;
-    fprintf(stderr, "
-watchdog: main thread in %s, eip=0x%08x
-", stage, (unsigned int)uc->uc_mcontext.gregs[REG_EIP]);
+    fprintf(stderr, "\nwatchdog: main thread in %s, eip=0x%08x\n", stage, (unsigned int)uc->uc_mcontext.gregs[REG_EIP]);
     for (i = 0; i < 24 && fp; i++) {
-        fprintf(stderr, "  frame %2d return 0x%08x
-", i, fp[1]);
+        fprintf(stderr, "  frame %2d return 0x%08x\n", i, fp[1]);
         fp = (unsigned int *)fp[0];
     }
     _exit(3);
