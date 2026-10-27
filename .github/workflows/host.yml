@@ -16,3 +16,13 @@ jobs:
       - run: cmake -S . -B build -A Win32
       - run: cmake --build build --config Release
       - run: .\build\Release\nintendogs_pc.exe
+  game-compile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y gcc-multilib
+      - run: python3 port/tools/host_compile.py --out host_compile_report.txt || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: host-compile-report
+          path: host_compile_report.txt
