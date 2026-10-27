@@ -28,7 +28,7 @@ else()
 endif()
 
 if(NDOGS_BUILD_GAME)
-    file(GLOB_RECURSE NDOGS_GAME_SOURCES CONFIGURE_DEPENDS src/*.c)
+    file(GLOB_RECURSE NDOGS_GAME_SOURCES CONFIGURE_DEPENDS src/*.c port/hostfuncs/*.c)
     target_sources(nintendogs_pc PRIVATE ${NDOGS_GAME_SOURCES})
     target_compile_definitions(nintendogs_pc PRIVATE NDOGS_PC=1)
 endif()

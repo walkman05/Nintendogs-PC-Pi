@@ -105,11 +105,18 @@ def main():
             f.write(os.path.relpath(p, ROOT) + '\n')
         if args.link:
             ok = [obj_path(p) for p, rc, _ in results if rc == 0]
-            for extra in ('host_cpu.c', 'host_link.c', 'platform_mem.c'):
-                src = os.path.join(ROOT, 'port', 'src', extra)
-                o = os.path.join(OBJDIR, 'port_' + extra[:-2] + '.o')
-                subprocess.run([args.cc] + FLAGS + ['-c', src, '-o', o], check=True)
-                ok.append(o)
+            extras = [os.path.join(ROOT, 'port', 'src', x) for x in ('host_cpu.c', 'host_link.c', 'platform_mem.c')]
+            hf = os.path.join(ROOT, 'port', 'hostfuncs')
+            extras += [os.path.join(hf, x) for x in sorted(os.listdir(hf)) if x.endswith('.c')]
+            for src in extras:
+                o = os.path.join(OBJDIR, 'port_' + os.path.basename(src)[:-2] + '.o')
+                r = subprocess.run([args.cc] + FLAGS + ['-c', src, '-o', o], capture_output=True, text=True)
+                if r.returncode:
+                    f.write('port source failed: %s
+%s
+' % (os.path.relpath(src, ROOT), r.stderr[:2000]))
+                else:
+                    ok.append(o)
             rc, undef, dup, err = link(args.cc, ok, os.path.join(OBJDIR, 'game.elf'))
             f.write('\nlink (%d objects): %s  undefined: %d  multiply defined: %d\n'
                     % (len(ok), 'ok' if rc == 0 else 'failed', len(undef), len(dup)))
