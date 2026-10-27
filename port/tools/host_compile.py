@@ -37,7 +37,8 @@ def compile_one(cc, path):
 def link(cc, objs, out):
     """data_/bss_ symbols are absolute at the address their name gives (DS memory is mapped there at run time)."""
     names = set()
-    for p in sources():
+    hf = os.path.join(ROOT, 'port', 'hostfuncs')
+    for p in list(sources()) + [os.path.join(hf, x) for x in os.listdir(hf) if x.endswith('.c')]:
         with open(p, encoding='utf-8', errors='replace') as f:
             names.update(m.group(0) for m in DATA_RE.finditer(f.read()))
     script = os.path.join(OBJDIR, 'datasyms.ld')
