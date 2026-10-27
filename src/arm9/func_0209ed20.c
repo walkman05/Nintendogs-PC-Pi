@@ -20,11 +20,19 @@ u32 func_0209ed20(int param_1)
     if (piVar3[0xb] != 0) {
         func_02070c18((int)(piVar3 + 1), param_1);
         z = 0;
+#ifdef NDOGS_PC
+        pb = piVar3;
+#else
         asm { mov pb, piVar3 }
+#endif
         piVar3[0xb] = z;
 
         hdr = pb[0];
+#ifdef NDOGS_PC
+        c100 = 100;
+#else
         asm { mov c100, #100 }
+#endif
         *(u16 *)((int)pb + 0xe) = c100;
         iVar5 = 0x3c;
         if (hdr != 0) {

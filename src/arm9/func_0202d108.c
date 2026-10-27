@@ -11,10 +11,17 @@ extern s32 func_020bc14c(s32 *a);
 extern void func_020bbe14(s32 a, s32 b);
 extern u8 *func_020bc3c4(void);
 
+#ifdef NDOGS_PC
+static inline void SwapByte(u32 v, vu8 *p)
+{
+    HostSwpb(p, v);
+}
+#else
 static inline void SwapByte(u32 v, vu8 *p)
 {
     asm { swpb r0, v, [p] }
 }
+#endif
 
 #define RESET_BODY(p, q) \
     do { \

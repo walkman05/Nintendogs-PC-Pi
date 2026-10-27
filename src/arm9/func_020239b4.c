@@ -28,12 +28,19 @@ extern void func_0202322c(u8 *p);
 
 #define SUBOF(p) (*(Sub **)((p) + 0x9e8))
 
+#ifdef NDOGS_PC
+static inline void SwPB0(vu8 *p, u32 v)
+{
+    HostSwpb(p, v);
+}
+#else
 static inline void SwPB0(vu8 *p, u32 v)
 {
     asm {
         swpb r0, v, [p]
     }
 }
+#endif
 
 void func_020239b4(u8 *p, s32 param_2)
 {

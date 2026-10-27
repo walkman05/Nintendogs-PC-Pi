@@ -25,12 +25,20 @@ void func_020fd878(void)
     u16 *puVar3;
 
     func_0210a5e4();
+#ifdef NDOGS_PC
+    pd = &data_0215be48;
+#else
     asm { ldr pd, =data_0215be48 }
+#endif
     piVar6 = (s32 *)(*(u8 **)pd + 0x1dec);
     piVar6 = (s32 *)((u8 *)piVar6 + 0x294);
     piVar6 = (s32 *)((u8 *)piVar6 + 72);
     i = 0;
+#ifdef NDOGS_PC
+    zero = i;
+#else
     asm { mov zero, i }
+#endif
     k19 = 19;
     k14 = 14;
     k32 = 32;

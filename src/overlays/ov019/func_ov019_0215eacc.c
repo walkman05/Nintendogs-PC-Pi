@@ -9,6 +9,12 @@ extern s32 func_ov019_0215ccd8(u8 *p);
 extern void func_ov019_0215ca28(s32 a, u8 *b);
 extern u32 func_ov019_021611a0(void);
 
+#ifdef NDOGS_PC
+static inline u32 SwapR(u32 v, vu8 *p)
+{
+    return HostSwpb(p, v);
+}
+#else
 static inline u32 SwapR(u32 v, vu8 *p)
 {
     u32 old;
@@ -17,6 +23,7 @@ static inline u32 SwapR(u32 v, vu8 *p)
     }
     return old;
 }
+#endif
 
 u32 func_ov019_0215eacc(u8 *param_1)
 {
@@ -49,6 +56,12 @@ u32 func_ov019_0215eacc(u8 *param_1)
     iVar6 = func_ov019_0215ccd8(param_1);
     uVar7 = iVar6;
     if (iVar6 != 0) {
+#ifdef NDOGS_PC
+        t16 = *(u16 *)(iVar6 + 32);
+        pa = (vu8 *)(iVar6 + 1);
+        t16 = t16 & ~1u;
+        *(u16 *)(iVar6 + 32) = (u16)t16;
+#else
         asm {
             ldrh t16, [iVar6, #32]
         }
@@ -61,6 +74,7 @@ u32 func_ov019_0215eacc(u8 *param_1)
         asm {
             strh t16, [iVar6, #32]
         }
+#endif
         uVar7 = SwapR(*(u8 *)(iVar6 + 1) & ~1, pa);
     }
     if (iVar5 == 0) {
@@ -68,9 +82,13 @@ u32 func_ov019_0215eacc(u8 *param_1)
     }
     func_ov019_0215ca28(iVar5, param_1 + 0x3c);
     *(s16 *)(param_1 + 0x1e) = 3;
+#ifdef NDOGS_PC
+    i = 0;
+#else
     asm {
         mov i, #0
     }
+#endif
     ua = (u8 *)uStack_30;
     zi = i;
     zk1 = i;

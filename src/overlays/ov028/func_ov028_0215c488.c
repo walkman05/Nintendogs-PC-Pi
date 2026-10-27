@@ -76,8 +76,12 @@ void func_ov028_0215c488(void)
     func_0208f380();
     func_0208e1e8(auStack_1c);
     puVar6 = func_0208e150(piVar2, auStack_1c);
+#ifdef NDOGS_PC
+    iVar1 = func_0208f698(puVar6);
+#else
     func_0208f698(puVar6);
     asm { mov iVar1, r0 }
+#endif
     pa = (u32 *)(iVar1 + 0x3c);
     *(s32 *)(iVar1 + 0x3c) = 0;
     pa[1] = 0x400;

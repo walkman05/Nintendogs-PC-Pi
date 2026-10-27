@@ -24,16 +24,36 @@ u32 func_02093500(u32 *param_1, u8 *param_2, int param_3, u8 param_4)
     u32 *pg;
 
     pg = (u32 *)&data_02159034;
+#ifdef NDOGS_PC
+    ; /* r12 = param_3 << 16; consumed below as p3 = (s16)param_3 */
+#else
     asm { mov r12, param_3, lsl #16 }
+#endif
     uVar9 = 0;
     puVar10 = *(u8 **)((u8 *)*pg + 0x141c);
+#ifdef NDOGS_PC
+    c568 = 0x568;
+#else
     asm { ldr c568, =0x568 }
+#endif
     psVar5 = (s16 *)&data_0212fcc4;
+#ifdef NDOGS_PC
+    p2 = param_2;
+#else
     asm { mov p2, param_2 }
+#endif
+#ifdef NDOGS_PC
+    p4 = param_4;
+#else
     asm { mov p4, param_4 }
+#endif
     iVar8 = uVar9;
     puVar10 = puVar10 + c568;
+#ifdef NDOGS_PC
+    p3 = (s16)param_3;
+#else
     asm { mov p3, r12, asr #16 }
+#endif
 top:
     if (psVar5[0] != 4) {
         goto inc;

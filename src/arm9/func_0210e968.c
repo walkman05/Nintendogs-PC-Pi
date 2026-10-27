@@ -28,9 +28,17 @@ u32 func_0210e968(u32 param_1, u8 *param_2)
         if (**(u32 **)&data_0215bfbc != 0) {
             i = local_6c;
             tabA = &data_02148710;
+#ifdef NDOGS_PC
+            tabB = &data_021486e8;
+#else
             asm { ldr tabB, =data_021486e8 }
+#endif
             bp = acStack_68;
+#ifdef NDOGS_PC
+            csz = 64;
+#else
             asm { mov csz, #64 }
+#endif
             do {
                 rec = *(u32 *)(*(u8 **)&data_0215bfbc + (u32)i * 16 + 8);
                 if (rec == param_1) {

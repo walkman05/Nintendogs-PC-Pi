@@ -48,13 +48,23 @@ void func_020c5b00(u32 param_1, u32 *param_2, s32 param_3)
     s32 aiStack_48[12];
     u32 *pOut;
 
+#ifdef NDOGS_PC
+    gp = (s32)&data_027c0360;
+    k12 = 12;
+    gv = *(s32 *)gp;
+#else
     asm { ldr gp, =data_027c0360 }
     asm { mov k12, #12 }
     asm { ldr gv, [gp] }
+#endif
     iVar10 = *(s32 *)(gv + 0x214);
     off = param_3 * k12;
     a0 = (s32 *)((param_3 + 1) * k12 + iVar10);
+#ifdef NDOGS_PC
+    pOut = param_2;
+#else
     asm { mov pOut, param_2 }
+#endif
     func_02067e34(a0, (s32 *)(iVar10 + off), local_120);
     iVar5 = func_02067c30(local_120);
     *(T3 *)local_114 = *(T3 *)(iVar10 + off);

@@ -5,9 +5,13 @@ extern void func_020dfe88(void *a, void *b, u32 c, void *d);
 
 static inline u8 SwapB(u32 v, vu8 *p)
 {
+#ifdef NDOGS_PC
+    return HostSwpb(p, v);
+#else
     u8 old;
     asm { swpb old, v, [p] }
     return old;
+#endif
 }
 
 typedef struct {
@@ -31,12 +35,20 @@ void func_020dfdd0(u16 *param_1, s32 param_2)
     s32 iVar5;
 
     iVar6 = 0;
+#ifdef NDOGS_PC
+    f.p1 = (u32)param_1;
+    iVar3 = 0;
+    f.l32[0] = (s16)param_2;
+    f.l32[1] = 1;
+    iVar4 = 65536;
+#else
     asm { mov r1, #1 }
     asm { str param_1, [sp] }
     iVar3 = 0;
     asm { strh param_2, [sp, #6] }
     asm { strh r1, [sp, #8] }
     asm { mov iVar4, #65536 }
+#endif
     pAb = f.ab;
     pL2a = &f.l2a;
     n = 2;
@@ -58,9 +70,14 @@ void func_020dfdd0(u16 *param_1, s32 param_2)
         iVar3 = (s8)(iVar3 + 1);
         iVar4 = iVar5;
     } while (iVar3 < 89);
+#ifdef NDOGS_PC
+    *(u16 *)f.p1 = 0;
+    HostSwpb((vu8 *)(f.p1 + 2), (u32)iVar6);
+#else
     asm { ldr r0, [sp] }
     asm { mov r1, #0 }
     asm { strh r1, [r0] }
     asm { add r1, r0, #2 }
     asm { swpb r0, iVar6, [r1] }
+#endif
 }

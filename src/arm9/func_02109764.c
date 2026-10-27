@@ -71,10 +71,15 @@ void func_02109764(u8 *param_1)
         flag = 1;
     }
     if (0 != flag) {
+#ifdef NDOGS_PC
+        r8v = func_0210e968(9, data_02147f28);
+        r7v = func_0210e968(9, data_02147f38);
+#else
         func_0210e968(9, data_02147f28);
         asm { mov r8v, r0 }
         func_0210e968(9, data_02147f38);
         asm { mov r7v, r0 }
+#endif
         r5v = func_0210e968(9, data_02147f48);
         r4v = func_0210e968(9, data_02147f5c);
         func_02113090(2, r8v);

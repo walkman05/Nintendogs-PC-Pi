@@ -27,7 +27,11 @@ void func_020df6ec(s16 *param_1, s32 param_2, u32 *param_3)
     param_3[1] = 0;
     bVar6 = 0;
     uVar8 = 0;
+#ifdef NDOGS_PC
+    uVar11 = (u16)iVar9;
+#else
     asm { mov uVar11, iVar9 }
+#endif
     i = 0;
     *(u16 *)(param_3 + 2) = 0;
     do {

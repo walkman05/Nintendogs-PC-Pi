@@ -15,7 +15,11 @@ s32 func_02096264(u8 *p1, u32 p2, s32 p3)
     s32 t4;
     s32 t5;
 
+#ifdef NDOGS_PC
+    zz = 0;
+#else
     asm { mov zz, #0 }
+#endif
     iVar2 = zz;
     iVar3 = iVar2;
     p5 = func_020978d0(p2, p3);
@@ -27,7 +31,11 @@ s32 func_02096264(u8 *p1, u32 p2, s32 p3)
         iVar3 = (s32)((u8 *)0 + p3 * 0x900);
         break;
     case 2:
+#ifdef NDOGS_PC
+        t2 = zz;
+#else
         asm { mov t2, zz }
+#endif
         iVar3 = p3 * 0x1ea0 + (t2 + 0x1b00);
         break;
     case 6:
@@ -37,11 +45,19 @@ s32 func_02096264(u8 *p1, u32 p2, s32 p3)
         iVar3 = (s32)((u8 *)0 + 0x16600 + (p3 - p3));
         break;
     case 4:
+#ifdef NDOGS_PC
+        t4 = zz;
+#else
         asm { mov t4, zz }
+#endif
         iVar3 = p3 * 0x900 + (t4 + 0x7700);
         break;
     case 5:
+#ifdef NDOGS_PC
+        t5 = zz;
+#else
         asm { mov t5, zz }
+#endif
         iVar3 = p3 * 0x1ea0 + (t5 + 0xa400);
         break;
     }

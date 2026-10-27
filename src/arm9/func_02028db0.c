@@ -24,10 +24,23 @@ u32 func_02028db0(u8 *param_1, u32 param_2)
     case 10:
         sVar1 = *(s16 *)(param_2 * 2 + ((s16)(u16)param_1[0xa5] * 0x1e + (u32)data_0213c00c));
         bVar2 = (sVar1 != -1);
+#ifdef NDOGS_PC
+        if (bVar2) {
+            *(s16 *)(param_1 + 0xea) = sVar1;
+        }
+#else
         asm { strneh sVar1, [r0, #234] }
+#endif
         if (bVar2) {
             return 1;
         }
+#ifdef NDOGS_PC
+        HostSwpb((vu8 *)(param_1 + 168), 0);
+        *(u16 *)(param_1 + 256 + 18) = 0;
+        *(s16 *)(param_1 + 240) = 111;
+        HostSwpb((vu8 *)(param_1 + 165), 0);
+        HostSwpb((vu8 *)(param_1 + 163), 0);
+#else
         asm { add r2, r0, #168 }
         asm { mov r3, #0 }
         asm { swpb r1, r3, [r2] }
@@ -39,6 +52,7 @@ u32 func_02028db0(u8 *param_1, u32 param_2)
         asm { add r1, r0, #165 }
         asm { swpb r0, r3, [r1] }
         asm { swpb r1, r3, [r2] }
+#endif
         return 1;
     case 11:
         *(s16 *)(param_1 + 0xea) = *(s16 *)(param_2 * 2 + ((s16)(u16)param_1[0xa5] * 0x1e + (u32)data_0213bc5c));
@@ -53,6 +67,14 @@ u32 func_02028db0(u8 *param_1, u32 param_2)
         uVar3 = func_0202dc50(param_1, 0, param_2, (u16)(iVar4 - 0xc), param_1[0xa5], 1);
         return uVar3;
     }
+#ifdef NDOGS_PC
+    HostSwpb((vu8 *)(param_1 + 168), 0);
+    *(u16 *)(param_1 + 256 + 18) = 0;
+    *(s16 *)(param_1 + 240) = 111;
+    HostSwpb((vu8 *)(param_1 + 165), 0);
+    rv = 0;
+    HostSwpb((vu8 *)(param_1 + 163), 0);
+#else
     asm { add r2, r0, #168 }
     asm { mov r3, #0 }
     asm { swpb r1, r3, [r2] }
@@ -65,5 +87,6 @@ u32 func_02028db0(u8 *param_1, u32 param_2)
     asm { swpb r0, r3, [r1] }
     asm { mov rv, r3 }
     asm { swpb r1, r3, [r2] }
+#endif
     return rv;
 }

@@ -23,7 +23,11 @@ void func_020a4368(void)
     iVar2 = piVar7[2] + (*(int *)((u8 *)data_0214f130 + 0x2c) + piVar7[1]);
     two = 2;
     c49 = 49;
+#ifdef NDOGS_PC
+    iVar1 = 0x10dcd;
+#else
     asm { ldr iVar1, =0x10dcd }
+#endif
     do {
         uVar3 = func_01ffdb08(iVar5);
         if ((uVar3 != 0) && (iVar4 = func_02027540(uVar3), *(u16 *)(iVar4 + 0x26) < 5)) {

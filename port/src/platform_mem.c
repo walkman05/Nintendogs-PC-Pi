@@ -12,7 +12,7 @@
 
 const DsRegion ds_regions[] = {
     { 0x02000000ul, 0x00400000ul, "main RAM" },
-    { 0x027e0000ul, 0x00004000ul, "DTCM" },
+    { 0x027c0000ul, 0x00004000ul, "DTCM" },
     { 0x037f0000ul, 0x00010000ul, "shared WRAM" },  /* 0x037f8000 rounded to 64 KiB for VirtualAlloc */
 };
 const int ds_region_count = sizeof(ds_regions) / sizeof(ds_regions[0]);

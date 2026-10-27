@@ -37,11 +37,17 @@ void func_ov002_0215c4d4(u8 *param_1)
 
     uVar5 = func_0208c720(param_1, (u32)&data_ov002_0215c720, (u32)&data_ov002_0215c724);
     r4 = func_0207df48((u32)&data_ov002_0215c738);
+#ifdef NDOGS_PC
+    f2 = func_0207df48((u32)&data_ov002_0215c750);
+    f3 = func_0207df48((u32)&data_ov002_0215c76c);
+    gp = (u8 **)&data_ov002_0215c800;
+#else
     func_0207df48((u32)&data_ov002_0215c750);
     asm { mov f2, r0 }
     func_0207df48((u32)&data_ov002_0215c76c);
     gp = (u8 **)&data_ov002_0215c800;
     asm { mov f3, r0 }
+#endif
     P = *gp;
     q = P + 12;
     t = func_02006b78(r4);
@@ -53,11 +59,17 @@ void func_ov002_0215c4d4(u8 *param_1)
     }
 
     r4 = func_0207df48((u32)&data_ov002_0215c788);
+#ifdef NDOGS_PC
+    f2 = func_0207df48((u32)&data_ov002_0215c79c);
+    f3 = func_0207df48((u32)&data_ov002_0215c7b0);
+    gp = (u8 **)&data_ov002_0215c800;
+#else
     func_0207df48((u32)&data_ov002_0215c79c);
     asm { mov f2, r0 }
     func_0207df48((u32)&data_ov002_0215c7b0);
     gp = (u8 **)&data_ov002_0215c800;
     asm { mov f3, r0 }
+#endif
     P = *gp;
     q = P + 24;
     t = func_02006b78(r4);
@@ -69,11 +81,17 @@ void func_ov002_0215c4d4(u8 *param_1)
     }
 
     r4 = func_0207df48((u32)&data_ov002_0215c7c4);
+#ifdef NDOGS_PC
+    f2 = func_0207df48((u32)&data_ov002_0215c7d4);
+    f3 = func_0207df48((u32)&data_ov002_0215c7e4);
+    gp = (u8 **)&data_ov002_0215c800;
+#else
     func_0207df48((u32)&data_ov002_0215c7d4);
     asm { mov f2, r0 }
     func_0207df48((u32)&data_ov002_0215c7e4);
     gp = (u8 **)&data_ov002_0215c800;
     asm { mov f3, r0 }
+#endif
     P = *gp;
     q = P + 36;
     t = func_02006b78(r4);

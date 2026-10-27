@@ -38,8 +38,16 @@ join:
         u32 s = (u32)uVar5;
         u32 lo;
         u32 m;
+#ifdef NDOGS_PC
+        m = ~0u;
+#else
         asm { mvn m, #0 }
+#endif
+#ifdef NDOGS_PC
+        lo = s & m;
+#else
         asm { and lo, s, m }
+#endif
         *(u32 *)puVar4 = lo;
         *(u32 *)(puVar4 + 4) = (u32)(uVar5 >> 32) & m;
     }

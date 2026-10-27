@@ -21,9 +21,13 @@ void func_020a2574(void)
     base = (u32)data_021592e4;
     uVar9 = 0;
     puVar8 = (u32 *)(base + 0x28);
+#ifdef NDOGS_PC
+    z = uVar9;
+#else
     asm {
         str uVar9, [sp, #0]
     }
+#endif
     puVar7 = (u16 *)(base + 0x18);
     puVar6 = (u16 *)(base + 0x1c);
     puVar5 = (u16 *)(base + 0x1e);

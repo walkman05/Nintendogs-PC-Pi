@@ -2,6 +2,27 @@
 
 typedef void (*StateFn)(u8 *p);
 
+#ifdef NDOGS_PC
+static inline u8 SwapByte(vu8 *p, u32 v)
+{
+    return HostSwpb(p, v);
+}
+
+static inline void SwapR0(vu8 *p, u32 v)
+{
+    HostSwpb(p, v);
+}
+
+static inline void SwapR1(vu8 *p, u32 v)
+{
+    HostSwpb(p, v);
+}
+
+static inline void SwapR2(vu8 *p, u32 v)
+{
+    HostSwpb(p, v);
+}
+#else
 static inline u8 SwapByte(vu8 *p, u32 v)
 {
     u8 old;
@@ -23,6 +44,7 @@ static inline void SwapR2(vu8 *p, u32 v)
 {
     asm { swpb r2, v, [p] }
 }
+#endif
 
 extern s32 data_0213a8d4[];
 extern u8 data_0214f464[];

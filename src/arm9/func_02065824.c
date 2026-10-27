@@ -25,10 +25,15 @@ void func_02065824(u32 param_1, u32 param_2)
 
     g = &data_02150600;
     t = func_02080b08();
+#ifdef NDOGS_PC
+    iVar2 = g->f8;
+    irq = t;
+#else
     asm {
         ldr iVar2, [g, #8]
         mov irq, t
     }
+#endif
     if (iVar2 == param_1) {
         if (g->f14 != param_2) {
             func_02080b84();

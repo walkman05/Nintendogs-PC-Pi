@@ -42,7 +42,11 @@ void func_ov006_0215ed28(u8 *param_1)
 
     iVar2 = func_020364a8(param_1);
     iVar8 = 0;
+#ifdef NDOGS_PC
+    iVar7 = iVar8;
+#else
     asm { mov iVar7, iVar8 }
+#endif
     uVar6 = 0;
     bVar9 = 0;
     if (iVar2 != 0) {

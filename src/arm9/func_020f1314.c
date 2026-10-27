@@ -26,9 +26,15 @@ u8 *func_020f1314(s32 a, s32 b, s32 c)
     s32 i;
     u8 m;
 
+#ifdef NDOGS_PC
+    pb = b;
+    pa = a;
+    pcc = c;
+#else
     asm { mov pb, b }
     asm { mov pa, a }
     asm { mov pcc, c }
+#endif
     r = func_02080858(a, b, c);
     sum = 0;
     if (pb != 0) {

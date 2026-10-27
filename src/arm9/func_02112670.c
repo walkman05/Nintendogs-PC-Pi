@@ -22,7 +22,10 @@ void func_02112670(s32 param_1, u16 *param_2, u32 param_3)
         base = param_1 * 660;
         sh = (param_3 & 0xf) << 12;
         gp = &data_0215be48;
+#ifdef NDOGS_PC
+#else
         asm { mov r6, #0 }
+#endif
         do {
             iVar4 = (u8 *)(*gp + 0x1dec + base);
             {
@@ -31,7 +34,11 @@ void func_02112670(s32 param_1, u16 *param_2, u32 param_3)
             }
             uVar3 = func_02085cf4(*(s32 *)(iVar4 + 0xc), iVar5);
             iVar4 = func_02085ccc(*(s32 *)((u8 *)(*gp + base) + 0x1df8), iVar5);
+#ifdef NDOGS_PC
+            cnt = 0;
+#else
             asm { mov cnt, r6 }
+#endif
             if ((s32)uVar3 > 0) {
                 do {
                     cnt = cnt + 1;

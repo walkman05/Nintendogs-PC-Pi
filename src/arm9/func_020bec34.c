@@ -28,7 +28,11 @@ void func_020bec34(u8 *p, u32 *p2)
     rv = func_01ffdb08(*(s16 *)(p + 152));
     {
         s32 mode = *(s32 *)(p + 0x168);
+#ifdef NDOGS_PC
+        h = rv;
+#else
         asm { mov h, rv }
+#endif
         switch (mode) {
         case 0: {
             func_020beec0(p, func_01ffdb08(*(s16 *)(p + 152)), (u32)p2);
@@ -59,7 +63,11 @@ void func_020bec34(u8 *p, u32 *p2)
             s32 k;
             u32 tb;
             s32 idx;
+#ifdef NDOGS_PC
+            fld = *(s32 *)(p + 0x128);
+#else
             asm { ldr fld, [p, #0x128] }
+#endif
             idx = func_02028118(rv);
             idx = idx << 3;
             tb = (u32)data_02142898;

@@ -61,7 +61,11 @@ j0:
     sum = iVar5 + 0x90;
     sVar1 = *(s16 *)(param_1 + 0x114);
     v60 = 0x3c;
+#ifdef NDOGS_PC
+    dst = (s32)(s16)sVar1 * (s32)(s16)v60 + sum;
+#else
     asm { smlabb dst, sVar1, v60, sum }
+#endif
     psVar6 = func_0210befc();
     func_0209522c(dst, psVar6);
     func_02094cbc(iVar5, data_0214f130 + 0x1c, data_0214f130 + 0x2c);

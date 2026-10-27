@@ -1,11 +1,18 @@
 #include "ctx.h"
 
+#ifdef NDOGS_PC
+static inline u8 SwapByte(u32 v, vu8 *p)
+{
+    return HostSwpb(p, v);
+}
+#else
 static inline u8 SwapByte(u32 v, vu8 *p)
 {
     u8 old;
     asm { swpb old, v, [p] }
     return old;
 }
+#endif
 
 u8 func_02037dac(u8 *param_1, s32 param_2)
 {
@@ -16,7 +23,11 @@ u8 func_02037dac(u8 *param_1, s32 param_2)
     s32 d;
     if (v4 == 0) {
         cur = *(s32 *)(param_1 + 0x818);
+#ifdef NDOGS_PC
+        lim = ~272;
+#else
         asm { mvn lim, #272 }
+#endif
         nc = -cur;
         if (nc < lim) {
             *(s32 *)(param_1 + 0x818) = cur - 273u;

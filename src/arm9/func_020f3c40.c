@@ -7,7 +7,11 @@ extern u8 data_02133114[];
 extern void func_0208f54c(u8 *a, s32 b);
 extern void func_0208f588(u8 *a, s32 b);
 
+#ifdef NDOGS_PC
+static inline s8 SwapS8(s32 v, vu8 *p) { return (s8)HostSwpb(p, (u32)v); }
+#else
 static inline s8 SwapS8(s32 v, vu8 *p) { s8 old; asm { swpb old, v, [p] } return old; }
+#endif
 
 
 void func_020f3c40(s32 param_1)
@@ -32,9 +36,14 @@ void func_020f3c40(s32 param_1)
         {
             s8 *tb = data_02133124;
             u8 *pp = data_0215be44;
+#ifdef NDOGS_PC
+            tp = data_021330cc;
+            HostSwpb((vu8 *)(pp + 18), (u32)(s32)tb[iVx]);
+#else
             asm { ldrsb r3, [tb, iVx]; add r1, pp, #18 }
             tp = data_021330cc;
             asm { swpb r0, r3, [r1] }
+#endif
         }
         uVar9 = tp[2];
         iVar8 = 0;

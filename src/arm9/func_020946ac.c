@@ -10,8 +10,16 @@ s32 func_020946ac(s32 param_1, s32 param_2)
     u32 gi = (u32)data_02159034;
     u8 *q;
     u8 *base;
+#ifdef NDOGS_PC
+    cnt = (s16)res;
+#else
     asm { mov cnt, res }
+#endif
+#ifdef NDOGS_PC
+    off = res;
+#else
     asm { mov off, res }
+#endif
     gi = gi + 4096;
     q = *(u8 **)(gi + 0x41c);
     base = q + 584;

@@ -21,6 +21,10 @@ body:
     r = func_020eb75c(param_2);
     *(u32 *)(obj + 0x90) = r;
     /* tail pinned in asm: the literal lands in r1 after the str, as in the target */
+#ifdef NDOGS_PC
+    *(u8 **)(data_0215be3c + (param_2 << 2) + 8) = obj;
+    *(u16 *)(data_0215be3c + (param_2 << 1)) = 2;
+#else
     asm { ldr r1, =data_0215be3c }
     asm { mov r0, param_2, lsl #1 }
     asm { ldr r2, [r1] }
@@ -29,4 +33,5 @@ body:
     asm { ldr r1, [r1] }
     asm { mov r2, #2 }
     asm { strh r2, [r1, r0] }
+#endif
 }

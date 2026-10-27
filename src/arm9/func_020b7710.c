@@ -36,6 +36,12 @@ s32 func_020b7710(u8 *param_1)
     piVar2 = func_02002e58(iVar1);
     puVar3 = func_020038b8(piVar2, 0x2610);
     func_020b4200(puVar3);
+#ifdef NDOGS_PC
+    off = 0x260c;
+    *(u16 *)(puVar3 + 9728 + 12) = 0xffff;
+    pd = (u32)data_02159460;
+    *(u16 *)(puVar3 + off + 2) = 0xffff;
+#else
     asm { ldr off, =0x260c }
     asm { add r1, puVar3, #9728 }
     asm { mvn r2, #0 }
@@ -43,6 +49,7 @@ s32 func_020b7710(u8 *param_1)
     asm { add r1, puVar3, off }
     asm { ldr pd, =data_02159460 }
     asm { strh r2, [r1, #2] }
+#endif
     *(u32 *)pd = (u32)puVar3;
     iVar1 = func_020947f8();
     if (iVar1 != 0) {
