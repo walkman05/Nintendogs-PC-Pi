@@ -5,7 +5,7 @@
  * when their squared length reaches data_02126728, row1 = row2 x row0) and stores rotation (+0x28) and
  * translation (+0x4c) into the joint result dst. */
 
-extern u32 data_02126728[2];        /* s64 squared-length threshold, low word first */
+extern const s64 data_02126728;     /* minimum squared length worth normalizing */
 extern void func_02067e34(const VecFx32 *a, const VecFx32 *b, VecFx32 *ab);   /* VEC_Subtract: ab = a - b */
 extern void func_02067d04(const VecFx32 *a, const VecFx32 *b, VecFx32 *axb);  /* VEC_CrossProduct */
 extern fx32 func_01ff832c(fx32 a, const VecFx32 *v1, const VecFx32 *v2, VecFx32 *dst); /* VEC_MultAdd */
@@ -34,7 +34,7 @@ static void StoreVec(u8 *p, const VecFx32 *v)
 void func_01ffe7b4(const s32 *mtx, const u8 *src, u8 *dst, s32 w)
 {
     VecFx32 a, b, d, row0, row1, row2, tr;
-    s64 thr = (s64)(((u64)data_02126728[1] << 32) | data_02126728[0]);
+    s64 thr = data_02126728;
 
     LoadVec(&a, (const u8 *)mtx);
     LoadVec(&b, src + 0x28);
