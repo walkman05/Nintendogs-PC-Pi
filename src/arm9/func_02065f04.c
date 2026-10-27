@@ -1,5 +1,22 @@
 #include "ctx.h"
 
+#ifdef NDOGS_PC
+/* host: hardware registers through HostIo* (no trap) */
+void func_02065f04(u32 param_1, u32 param_2)
+{
+    while (HostIoRead32(0x040001a4) & 0x80000000) {
+    }
+    HostIoWrite8(0x040001a1, 0xc0);
+    HostIoWrite8(0x040001a8, (u8)(param_1 >> 24));
+    HostIoWrite8(0x040001a9, (u8)(param_1 >> 16));
+    HostIoWrite8(0x040001aa, (u8)(param_1 >> 8));
+    HostIoWrite8(0x040001ab, (u8)param_1);
+    HostIoWrite8(0x040001ac, (u8)(param_2 >> 24));
+    HostIoWrite8(0x040001ad, (u8)(param_2 >> 16));
+    HostIoWrite8(0x040001ae, (u8)(param_2 >> 8));
+    HostIoWrite8(0x040001af, (u8)param_2);
+}
+#else
 void func_02065f04(u32 param_1, u32 param_2)
 {
     vu32 *flag = (vu32 *)0x040001a4;
@@ -24,3 +41,4 @@ void func_02065f04(u32 param_1, u32 param_2)
     *b6 = (u8)(param_2 >> 8);
     *b7 = (u8)param_2;
 }
+#endif

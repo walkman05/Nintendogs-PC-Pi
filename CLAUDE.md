@@ -86,7 +86,15 @@ drawn yet (milestone 5).
   display registers, `NDOGS_WATCH=<reg>` logs who writes a register and when.
 - Optimisation: the renderers build at -O2; game code at -O0 (`NDOGS_OPT`): at -O1 some decompiled C relies on
   undefined behaviour (a file open fails, then func_0208b15c passes NULL to func_02095298).
-Status: boots through the intro to the title ("Please knock!"); about 25 fps there (3D rasteriser ~16 ms/frame).
+- Performance: a trapped register access costs ~17 us (two exceptions), so the hottest register users
+  (IME/IE, divider/sqrt, DMA status, card, GX FIFO and matrix registers, PXI) have `#ifdef NDOGS_PC` versions using
+  `HostIo*` (declared in host_compat.h). Those go through an always-accessible alias of the register memory
+  (`io_reg()`, platform_mem.h) and cost ~0.01 us. To find new hot spots: `NDOGS_TRAPPROF=<n>` (+`NDOGS_PROFFROM=<frame>`)
+  prints the busiest trapping instructions, resolve with addr2func.py; `NDOGS_STATUS=2` prints per-frame busy time
+  and traps; `NDOGS_TRAPBENCH=1` times one trap and one host access.
+- 3D: textures/palettes are copied once per frame into flat arrays (vram_flatten) for the rasteriser.
+Status: 60 fps through the intro, title and the demo's attract scene (~5-8 ms per frame). Known bug: in the attract
+scene the dogs aren't drawn (their shadows are).
 
 ## Build
 ```

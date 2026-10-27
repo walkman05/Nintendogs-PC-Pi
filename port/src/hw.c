@@ -4,10 +4,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include "hw.h"
+#include "platform_mem.h"
 
-#define R8(a) (*(volatile u8 *)(a))
-#define R16(a) (*(volatile u16 *)(a))
-#define R32(a) (*(volatile u32 *)(a))
+#define R8(a) (*(volatile u8 *)io_reg(a))
+#define R16(a) (*(volatile u16 *)io_reg(a))
+#define R32(a) (*(volatile u32 *)io_reg(a))
 
 extern void hw_page_open(u32 addr, int open);
 static int video_pending, vblank_pending;
@@ -291,6 +292,11 @@ static void do_dma(int ch, int trigger)
 void hw_io_prepare_read(u32 addr)
 {
     u32 a = addr & ~1u;
+    if ((addr & ~3u) - 0x04000604u < 0xa0u) {  /* 3D results: RAM_COUNT, POS/VEC_RESULT, CLIPMTX/VECMTX_RESULT */
+        extern u32 gx_read_result(u32 addr);
+        R32(addr & ~3u) = gx_read_result(addr & ~3u);
+        return;
+    }
     switch (a & ~3u) {
     case 0x04000004: /* DISPSTAT / VCOUNT: from the frame clock */
         hw.vcount = current_line();
@@ -417,10 +423,12 @@ void hw_init(void)
     memset(&hw, 0, sizeof hw);
     {
         extern u32 watch_addr;
+        extern u32 trap_prof_set(u32);
+        trap_prof_set(getenv("NDOGS_TRAPPROF") ? (u32)atoi(getenv("NDOGS_TRAPPROF")) : 0);
         watch_addr = getenv("NDOGS_WATCH") ? (u32)strtoul(getenv("NDOGS_WATCH"), 0, 16) & ~3u : 0;
     }
     hw_iolog = getenv("NDOGS_IOLOG") ? atoi(getenv("NDOGS_IOLOG")) : 0;
-    hw_status = getenv("NDOGS_STATUS") != 0;
+    hw_status = getenv("NDOGS_STATUS") ? atoi(getenv("NDOGS_STATUS")) : 0;
     /* The ARM7 publishes the PXI channels it serves in shared memory (0x027ffc00 + 0x388 + 4 * ARM7); the ARM9
      * waits for them (PXI_IsCallbackReady). The stand-in serves every channel; messages are logged with
      * NDOGS_IOLOG until each gets a real answer. */
@@ -532,7 +540,24 @@ double now_ms(void)
     QueryPerformanceCounter(&c);
     return (double)c.QuadPart * 1000.0 / (double)f.QuadPart;
 }
-static void sleep_ms(double ms) { if (ms > 1) Sleep((DWORD)ms); }
+/* Precise wait: Sleep() is 15.6 ms granular unless the timer resolution is raised (winmm, loaded at run time like
+ * user32); the last 2 ms are spun so a frame starts on time. */
+static void sleep_ms(double ms)
+{
+    static int res_set;
+    double end = now_ms() + ms;
+    if (!res_set) {
+        HMODULE w = LoadLibraryA("winmm.dll");
+        FARPROC f = w ? GetProcAddress(w, "timeBeginPeriod") : 0;
+        if (f)
+            ((UINT(WINAPI *)(UINT))f)(1);
+        res_set = 1;
+    }
+    if (ms > 2)
+        Sleep((DWORD)(ms - 2));
+    while (now_ms() < end)
+        Sleep(0);
+}
 #else
 #include <time.h>
 double now_ms(void)
@@ -633,6 +658,11 @@ void hw_halt(void)
     if (display_due)
         display_start();
     t = now_ms();
+    if (hw_status > 1) {  /* NDOGS_STATUS=2: per-frame busy time (VBlank to halt, including drawing) and traps */
+        static u32 last_traps;
+        fprintf(stderr, "busy %.1fms traps %u\n", t - (next_vblank - FRAME_MS), hw_trap_count - last_traps);
+        last_traps = hw_trap_count;
+    }
     if (next_vblank > t)
         sleep_ms(next_vblank - t);
     next_frame(now_ms());
@@ -679,7 +709,7 @@ void hw_io_snapshot(u8 *io)
 {
     hw_page_open(0x04000000, 1);
     hw_page_open(0x04001000, 1);
-    memcpy(io, (const void *)0x04000000, 0x2000);
+    memcpy(io, (const void *)io_reg(0x04000000), 0x2000);
     hw_page_open(0x04000000, 0);
     hw_page_open(0x04001000, 0);
 }
@@ -687,7 +717,7 @@ void hw_io_snapshot(u8 *io)
 void hw_capture_done(void)
 {
     hw_page_open(0x04000000, 1);
-    *(volatile u32 *)0x04000064u &= ~0x80000000u;
+    R32(0x04000064u) &= ~0x80000000u;
     hw_page_open(0x04000000, 0);
 }
 

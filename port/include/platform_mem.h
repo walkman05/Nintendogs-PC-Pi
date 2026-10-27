@@ -17,4 +17,18 @@ extern const int ds_region_count;
 int platform_map_ds_memory(void);
 void platform_unmap_ds_memory(void);
 
+/* The two 64 KiB I/O windows holding hardware registers (0x04000000, 0x04100000) are shared memory mapped twice:
+ * at the DS address, where register pages are kept inaccessible so the game's accesses trap, and at an alias that
+ * is always accessible, through which the register model and host code read and write registers. */
+#define IO_WINDOW 0x10000u
+extern unsigned char *platform_io_alias[2];
+static inline volatile void *io_reg(unsigned int addr)
+{
+    if (addr - 0x04000000u < IO_WINDOW)
+        return platform_io_alias[0] + (addr - 0x04000000u);
+    if (addr - 0x04100000u < IO_WINDOW)
+        return platform_io_alias[1] + (addr - 0x04100000u);
+    return (volatile void *)addr;
+}
+
 #endif

@@ -5,6 +5,8 @@
 #include <windows.h>
 #else
 #include <sys/mman.h>
+#include <unistd.h>
+#include <sys/syscall.h>
 #ifndef MAP_FIXED_NOREPLACE
 #define MAP_FIXED_NOREPLACE 0x100000
 #endif
@@ -43,11 +45,54 @@ static void unmap(unsigned long base, unsigned long size)
 #endif
 }
 
+unsigned char *platform_io_alias[2];
+static const unsigned long io_windows[2] = { 0x04000000ul, 0x04100000ul };
+
+/* one I/O window: shared memory at its DS address plus an alias view */
+static int map_io_window(int w)
+{
+    void *at = (void *)io_windows[w], *v, *alias;
+#ifdef _WIN32
+    HANDLE h = CreateFileMappingA(INVALID_HANDLE_VALUE, 0, PAGE_READWRITE, 0, IO_WINDOW, 0);
+    if (!h)
+        return 0;
+    v = MapViewOfFileEx(h, FILE_MAP_ALL_ACCESS, 0, 0, IO_WINDOW, at);
+    alias = MapViewOfFile(h, FILE_MAP_ALL_ACCESS, 0, 0, IO_WINDOW);
+#else
+    int fd = (int)syscall(SYS_memfd_create, "ndogs_io", 0);
+    if (fd < 0 || ftruncate(fd, IO_WINDOW) != 0)
+        return 0;
+    v = mmap(at, IO_WINDOW, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED_NOREPLACE, fd, 0);
+    alias = mmap(0, IO_WINDOW, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if (alias == MAP_FAILED)
+        alias = 0;
+#endif
+    platform_io_alias[w] = alias;
+    return v == at && alias;
+}
+
+/* the I/O region: the two register windows, the rest plain memory */
+static int map_io(unsigned long base, unsigned long size)
+{
+    return map_io_window(0) && map_io_window(1) &&
+           map_fixed(base + IO_WINDOW, io_windows[1] - base - IO_WINDOW) == (void *)(base + IO_WINDOW) &&
+           map_fixed(io_windows[1] + IO_WINDOW, base + size - io_windows[1] - IO_WINDOW) ==
+               (void *)(io_windows[1] + IO_WINDOW);
+}
+
 int platform_map_ds_memory(void)
 {
     int i, bad = 0;
     for (i = 0; i < ds_region_count; i++) {
-        void *p = map_fixed(ds_regions[i].base, ds_regions[i].size);
+        void *p;
+        if (ds_regions[i].base == io_windows[0]) {
+            if (!map_io(ds_regions[i].base, ds_regions[i].size)) {
+                fprintf(stderr, "could not map the I/O region\n");
+                bad = 1;
+            }
+            continue;
+        }
+        p = map_fixed(ds_regions[i].base, ds_regions[i].size);
         if (p != (void *)ds_regions[i].base) {
             fprintf(stderr, "could not map %s at 0x%08lx\n", ds_regions[i].name, ds_regions[i].base);
             bad = 1;

@@ -43,6 +43,25 @@ void func_02065be4(CARDRomStat *p)
             p->cache_page = (u8 *)page;
         }
         func_02065f04((page >> 8) | 0xB7000000, page << 24);
+#ifdef NDOGS_PC
+        /* the same loop through the hardware layer's direct accessors: register traps per word are slow */
+        {
+            u32 index = 0;
+            HostIoWrite32(0x040001a4, p->ctrl);
+            for (;;) {
+                const u32 ctrl = HostIoRead32(0x040001a4);
+                if ((ctrl & CARD_DATA_READY) != 0) {
+                    const u32 data = HostIoRead32(0x04100010);
+                    if (index < len) {
+                        dst[index++] = data;
+                    }
+                }
+                if (!(ctrl & CARD_START)) {
+                    break;
+                }
+            }
+        }
+#else
         {
             u32 index = 0;
             reg_CARD_CNT = p->ctrl;
@@ -59,6 +78,7 @@ void func_02065be4(CARDRomStat *p)
                 }
             }
         }
+#endif
         if (dst == (u32 *)c->dst) {
             data_02150600.src += len;
             data_02150600.dst += len;

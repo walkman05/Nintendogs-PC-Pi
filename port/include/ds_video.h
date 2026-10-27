@@ -31,7 +31,8 @@ u16 vram_read16(int role, u32 offset);
 u32 vram_read32(int role, u32 offset);
 void vram_cnt_written(int bank, u8 value);  /* VRAMCNT_A..I changed (bank 0..8) */
 void vram_init(void);
-u16 *vram_bank_ptr(int bank);               /* bank A-D (0-3) storage, for display capture */
+u16 *vram_bank_ptr(int bank);
+void vram_flatten(int role, u8 *dst, u32 size); /* copy of a hidden role (textures, texture palettes) */               /* bank A-D (0-3) storage, for display capture */
 
 /* ---- I/O snapshot (port/src/hw.c) -------------------------------------------------------------------------------
  * Register values as the game last wrote them: io[0x0000..0x1fff] is 0x04000000..0x04001fff (engine A registers

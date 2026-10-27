@@ -5,9 +5,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include "hw.h"
+#include "platform_mem.h"
 
-#define R16(a) (*(volatile u16 *)(a))
-#define R32(a) (*(volatile u32 *)(a))
+#define R16(a) (*(volatile u16 *)io_reg(a))
+#define R32(a) (*(volatile u32 *)io_reg(a))
 
 static FILE *rom;
 static u32 rom_size;
@@ -57,7 +58,7 @@ void hw_card_start(void)
     u8 cmd[8];
     u32 size = (ctrl >> 24) & 7, i;
     for (i = 0; i < 8; i++)
-        cmd[i] = *(volatile u8 *)(0x040001a8 + i);
+        cmd[i] = *(volatile u8 *)io_reg(0x040001a8 + i);
     len = size == 0 ? 0 : size == 7 ? 4 : 0x100u << size;
     pos = 0;
     switch (cmd[0]) {

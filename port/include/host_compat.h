@@ -6,5 +6,22 @@
 /* Inline `asm {}` blocks are mwcc-only: each one is wrapped as #ifdef NDOGS_PC <C equivalent> #else asm {...} #endif
  * in its file, using the helpers in host_cpu.h. */
 #include "host_cpu.h"
+/* Hardware registers without a trap (port/src/hw.c): the hottest register users call these under NDOGS_PC, since
+ * a trapped access costs ~17 us. A write that may make an interrupt pending is followed by hw_irq_poll(). */
+unsigned int HostIoRead32(unsigned int addr);
+unsigned short HostIoRead16(unsigned int addr);
+void HostIoWrite32(unsigned int addr, unsigned int value);
+void HostIoWrite16(unsigned int addr, unsigned short value);
+void HostIoWrite8(unsigned int addr, unsigned char value);
+static inline unsigned long long HostIoRead64(unsigned int addr)
+{
+    unsigned int lo = HostIoRead32(addr);
+    return lo | (unsigned long long)HostIoRead32(addr + 4) << 32;
+}
+static inline void HostIoWrite64(unsigned int addr, unsigned long long value)
+{
+    HostIoWrite32(addr, (unsigned int)value);
+    HostIoWrite32(addr + 4, (unsigned int)(value >> 32));
+}
 #endif
 #endif

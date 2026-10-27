@@ -171,3 +171,16 @@ u16 *vram_bank_ptr(int bank)
         return 0;
     return (u16 *)(banks[bank].cpu ? (u8 *)banks[bank].cpu : banks[bank].store);
 }
+
+/* A hidden role's whole contents as one flat image (unmapped parts zero): the 3D engine reads textures and
+ * texture palettes from this copy, made once per frame, instead of locating the bank for every texel. */
+void vram_flatten(int role, u8 *dst, u32 size)
+{
+    int i;
+    memset(dst, 0, size);
+    for (i = 0; i < 9; i++)
+        if (banks[i].role == role && banks[i].role_off < size) {
+            u32 n = banks[i].size < size - banks[i].role_off ? banks[i].size : size - banks[i].role_off;
+            memcpy(dst + banks[i].role_off, banks[i].store, n);
+        }
+}

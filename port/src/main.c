@@ -169,6 +169,18 @@ int main(int argc, char **argv)
     if (ndogs_load_main(dir) != 0)
         return 1;
     hw_card_open(dir);
+    if (getenv("NDOGS_TRAPBENCH")) {  /* cost of one trapped register access */
+        extern double now_ms(void);
+        double t0 = now_ms();
+        int k;
+        for (k = 0; k < 100000; k++)
+            (void)*(volatile unsigned short *)0x04000208u;
+        printf("trap: %.2f us each\n", (now_ms() - t0) * 0.01);
+        t0 = now_ms();
+        for (k = 0; k < 100000; k++)
+            (void)HostIoRead16(0x04000208u);
+        printf("host accessor: %.2f us each\n", (now_ms() - t0) * 0.01);
+    }
     {
         extern void video_init(void);
         video_init();

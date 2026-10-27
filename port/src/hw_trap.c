@@ -4,6 +4,7 @@
  * flag (so every instruction form works, flags included); on the single-step trap a write is handed to the
  * model and the page is closed again. The game runs on one thread, so the short open window is safe. */
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "hw.h"
 
@@ -33,6 +34,28 @@ static struct {
 
 int hw_iolog;
 u32 watch_addr;
+/* NDOGS_TRAPPROF=<n>: count traps per faulting instruction, print the busiest after n traps */
+static u32 trap_prof, prof_eip[4096], prof_n[4096];
+u32 trap_prof_set(u32 n) { return trap_prof = n; }
+static void prof_hit(u32 eip)
+{
+    static u32 total;
+    extern u32 hw_frame;
+    static int from = -1;
+    u32 h = (eip * 2654435761u) >> 20, i;
+    while (prof_eip[h] && prof_eip[h] != eip)
+        h = (h + 1) & 4095;
+    if (from < 0)
+        from = getenv("NDOGS_PROFFROM") ? atoi(getenv("NDOGS_PROFFROM")) : 0;
+    if (hw_frame < (u32)from)
+        return;
+    prof_eip[h] = eip;
+    prof_n[h]++;
+    if (++total == trap_prof)
+        for (i = 0; i < 4096; i++)
+            if (prof_n[i] > trap_prof / 200)
+                fprintf(stderr, "trapprof %08x %u\n", prof_eip[i], prof_n[i]);
+}
 extern void hw_watch_hit(u32 addr, u32 eip, u32 ebp);
 unsigned hw_trap_count, hw_trap_gx;
 
@@ -58,21 +81,13 @@ int hw_trap_busy(void) { return pending.active; }
 static int in_exception;
 int hw_in_exception(void) { return in_exception; }
 
-/* During an access every register page is open, so the model can touch registers on other pages. */
-static void protect_all(int open)
-{
-    unsigned i;
-    u32 p;
-    for (i = 0; i < sizeof ranges / sizeof ranges[0]; i++)
-        for (p = ranges[i].base; p < ranges[i].base + ranges[i].size; p += 0x1000)
-            protect(p, open);
-}
 
-/* For host accessors: open/close the page holding a trapped register (no-op for other addresses). */
+/* The register model and host accessors reach registers through the always-accessible alias (platform_mem.h), so
+ * pages never need opening for them; only the trapped instruction's own page is opened while it runs. */
 void hw_page_open(u32 addr, int open)
 {
-    if (trapped(addr))
-        protect(page_of(addr), open);
+    (void)addr;
+    (void)open;
 }
 
 #ifdef _WIN32
@@ -96,10 +111,12 @@ static LONG CALLBACK on_exception(EXCEPTION_POINTERS *e)
         pending.addr = addr;
         pending.page = page_of(addr);
         pending.write = r->ExceptionInformation[0] == 1;
-        protect_all(1);
+        protect(pending.page, 1);
         hw_io_prepare_read(addr);  /* also for writes: read-modify-write instructions read first */
         if (pending.write)
             hw_io_before_write(addr);
+        if (trap_prof)
+            prof_hit((u32)e->ContextRecord->Eip);
         if (pending.write && watch_addr && (addr & ~3u) == watch_addr)  /* NDOGS_WATCH=<reg>: who writes it, when */
             hw_watch_hit(addr, (u32)e->ContextRecord->Eip, (u32)e->ContextRecord->Ebp);
         e->ContextRecord->EFlags |= 0x100;  /* single-step the access */
@@ -115,7 +132,7 @@ static LONG CALLBACK on_exception(EXCEPTION_POINTERS *e)
         if (hw_iolog)
             fprintf(stderr, "io %s 0x%08x = 0x%08x\n", pending.write ? "W" : "R", pending.addr,
                     *(volatile u32 *)(pending.addr & ~3u));
-        protect_all(0);
+        protect(pending.page, 0);
         if (pending.write) {
             in_exception = 1;
             hw_irq_poll();  /* a write may have made an interrupt pending (IME/IE/IF, FIFO) */
@@ -155,7 +172,7 @@ static void on_segv(int sig, siginfo_t *si, void *ucv)
     pending.addr = addr;
     pending.page = page_of(addr);
     pending.write = (uc->uc_mcontext.gregs[REG_ERR] & 2) != 0;
-    protect_all(1);
+    protect(pending.page, 1);
     hw_io_prepare_read(addr);
     if (pending.write)
         hw_io_before_write(addr);
@@ -179,7 +196,7 @@ static void on_trap(int sig, siginfo_t *si, void *ucv)
     if (hw_iolog)
         fprintf(stderr, "io %s 0x%08x = 0x%08x\n", pending.write ? "W" : "R", pending.addr,
                 *(volatile u32 *)(pending.addr & ~3u));
-    protect_all(0);
+    protect(pending.page, 0);
     if (pending.write) {
         in_exception = 1;
         hw_irq_poll();

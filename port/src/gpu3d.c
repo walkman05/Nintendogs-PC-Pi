@@ -8,7 +8,10 @@
  * (zero-area) polygons, exact hardware edge/interpolation precision, polygon/vertex RAM overflow beyond 2048
  * polygons. */
 #include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include "ds_video.h"
+extern double now_ms(void);
 
 #define MAX_POLY 2048
 #define MAX_PV 10 /* a quad clipped against 6 planes */
@@ -748,7 +751,12 @@ typedef struct {
     int fmt, w, h, rs, rt, fs, ft, transp0;
 } texinfo_t;
 
-static inline u16 pal16(u32 off) { return vram_read16(VRAM_TEXPAL, off & 0x1ffff); }
+/* this frame's texture and texture-palette memory (vram_flatten) */
+static u8 tex_mem[0x80000], texpal_mem[0x20000];
+static inline u8 tex8(u32 off) { return tex_mem[off & 0x7ffff]; }
+static inline u16 tex16(u32 off) { off &= 0x7fffe; return (u16)(tex_mem[off] | tex_mem[off + 1] << 8); }
+static inline u32 tex32(u32 off) { off &= 0x7fffc; return *(const u32 *)(tex_mem + off); }
+static inline u16 pal16(u32 off) { off &= 0x1fffe; return (u16)(texpal_mem[off] | texpal_mem[off + 1] << 8); }
 
 static inline int wrapc(int c, int size, int rep, int flip)
 {
@@ -780,32 +788,32 @@ static int tex_sample(const texinfo_t *ti, int s, int t, u16 *col)
     int idx, v;
     switch (ti->fmt) {
     case 1:
-        v = vram_read8(VRAM_TEX, a + i);
+        v = tex8(a + i);
         *col = pal16(ti->palbase + (v & 31) * 2);
         v >>= 5;
         return v * 4 + (v >> 1);
     case 2:
-        v = vram_read8(VRAM_TEX, a + (i >> 2));
+        v = tex8(a + (i >> 2));
         idx = (v >> ((i & 3) * 2)) & 3;
         if (idx == 0 && ti->transp0) return 0;
         *col = pal16(ti->palbase + idx * 2);
         return 31;
     case 3:
-        v = vram_read8(VRAM_TEX, a + (i >> 1));
+        v = tex8(a + (i >> 1));
         idx = (i & 1) ? v >> 4 : v & 15;
         if (idx == 0 && ti->transp0) return 0;
         *col = pal16(ti->palbase + idx * 2);
         return 31;
     case 4:
-        idx = vram_read8(VRAM_TEX, a + i);
+        idx = tex8(a + i);
         if (idx == 0 && ti->transp0) return 0;
         *col = pal16(ti->palbase + idx * 2);
         return 31;
     case 5: {
         u32 blk = (u32)((y >> 2) * (ti->w >> 2) + (x >> 2));
-        u32 word = vram_read32(VRAM_TEX, a + blk * 4);
+        u32 word = tex32(a + blk * 4);
         u32 pia = 0x20000 + ((a & 0x1ffff) >> 1) + (a >= 0x40000 ? 0x10000 : 0) + blk * 2;
-        u16 pw = vram_read16(VRAM_TEX, pia);
+        u16 pw = tex16(pia);
         u32 po = ti->palbase + (pw & 0x3fff) * 4;
         int mode = pw >> 14;
         idx = (word >> ((y & 3) * 8 + (x & 3) * 2)) & 3;
@@ -830,11 +838,11 @@ static int tex_sample(const texinfo_t *ti, int s, int t, u16 *col)
         }
     }
     case 6:
-        v = vram_read8(VRAM_TEX, a + i);
+        v = tex8(a + i);
         *col = pal16(ti->palbase + (v & 7) * 2);
         return v >> 3;
     case 7:
-        v = vram_read16(VRAM_TEX, a + i * 2);
+        v = tex16(a + i * 2);
         *col = (u16)v;
         return (v & 0x8000) ? 31 : 0;
     default:
@@ -1107,6 +1115,10 @@ void gx_render_swapped(const u8 *io, u32 *out)
     for (i = 0; i < 32; i++)
         rc.toon[i] = io16(io, 0x380 + i * 2);
 
+    double tp0 = now_ms(), tp1, tp2;
+    vram_flatten(VRAM_TEX, tex_mem, sizeof tex_mem);
+    vram_flatten(VRAM_TEXPAL, texpal_mem, 0x18000);
+
     /* rear plane */
 
     {
@@ -1132,8 +1144,12 @@ void gx_render_swapped(const u8 *io, u32 *out)
     if (!(L->swapflags & 1))
         sort_idx(order + nop, ntr);
     n = nop + ntr;
+    tp1 = now_ms();
     for (i = 0; i < n; i++)
         raster_poly(&L->poly[order[i]], &rc);
+    tp2 = now_ms();
+    if (getenv("NDOGS_VLOG"))
+        fprintf(stderr, "3d: %d polys (%d translucent), setup %.2fms raster %.2fms\n", n, ntr, tp1 - tp0, tp2 - tp1);
 
     /* edge marking: opaque polygon pixels in front of a neighbour with a different polygon ID */
     if (rc.disp3dcnt & 0x20) {

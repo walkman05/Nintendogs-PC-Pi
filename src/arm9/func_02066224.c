@@ -2,6 +2,17 @@
 
 typedef volatile u64 vu64;
 
+#ifdef NDOGS_PC
+/* host: hardware registers through HostIo* (no trap) */
+void func_02066224(u32 *p)
+{
+    HostIoWrite64(0x04000290, *(u64 *)p);
+    HostIoWrite64(0x04000298, *(u64 *)(p + 2));
+    HostIoWrite16(0x04000280, *(u16 *)((u8 *)p + 0x18));
+    HostIoWrite64(0x040002b8, *(u64 *)(p + 4));
+    HostIoWrite16(0x040002b0, *(u16 *)((u8 *)p + 0x1a));
+}
+#else
 void func_02066224(u32 *p)
 {
     *(vu64 *)0x04000290 = *(u64 *)p;
@@ -10,3 +21,4 @@ void func_02066224(u32 *p)
     *(vu64 *)0x040002b8 = *(u64 *)(p + 4);
     *(vu16 *)0x040002b0 = *(u16 *)((u8 *)p + 0x1a);
 }
+#endif
