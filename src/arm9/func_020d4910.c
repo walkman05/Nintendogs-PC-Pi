@@ -3,11 +3,19 @@
 #include "ctx.h"
 
 extern u32 data_021594d0;
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_020d5e60 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern u32 func_020d5e60(void);
+#else
 extern u16 func_020d5e60(void);
+#endif
 extern s32 func_020d5e70(u32 a, u32 b, u16 *c);
 extern void func_020d5e10(u16 a, u32 b);
 extern u32 func_020d6ccc(void);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_020d5f68 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern u32 func_020d5f68(void);
+#else
 extern u16 func_020d5f68(void);
+#endif
 extern s32 func_020d6024(u32 a, u16 *b);
 extern void func_020d48c4(void);
 

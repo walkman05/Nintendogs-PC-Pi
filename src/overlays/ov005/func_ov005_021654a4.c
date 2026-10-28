@@ -1,7 +1,11 @@
 #pragma avoid_byte strb
 #include "ctx.h"
 
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_02020894 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+s32 func_02020894(u8 *p);
+#else
 u16 func_02020894(u8 *p);
+#endif
 void func_020264f4(u8 *p);
 u32 func_020255a4(u8 *p);
 

@@ -17,7 +17,11 @@ extern void func_0203e8cc(u8 *p, int a, int b);
 extern void func_0203e908(u8 *p, int a);
 extern int func_ov005_0215dbec(u8 *p, int a);
 extern int func_02027f78(u8 *p, int a);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_02041f04 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern u32 func_02041f04(u8 *p);
+#else
 extern u16 func_02041f04(u8 *p);
+#endif
 
 
 static inline s32 FXM(s32 a, s32 b)

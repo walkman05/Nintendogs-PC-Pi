@@ -5,7 +5,11 @@ extern u8 *data_02159428;
 extern s16 data_02126868[];
 extern u8 *data_02159444;
 extern void func_020bc024(s32 *a);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_02068078 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern u32 func_02068078(s32 a, s32 b);
+#else
 extern s16 func_02068078(s32 a, s32 b);
+#endif
 extern s32 func_02037450(u8 *p, s32 a);
 
 typedef struct { u32 a, b, c; } Vec3;

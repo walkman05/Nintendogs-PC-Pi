@@ -8,8 +8,16 @@ extern void func_ov007_0215d0ac(void);
 extern void func_ov007_0215c4ac(void);
 extern s32 func_020d6420(u8 *);
 extern void func_020d68c8(void *, u8 *);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_020d5e60 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern u32 func_020d5e60(void);
+#else
 extern u16 func_020d5e60(void);
+#endif
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_020d5e70 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern BOOL func_020d5e70(void *, u32, u16 *);
+#else
 extern u8 func_020d5e70(void *, u32, u16 *);
+#endif
 extern s32 func_020d6358(void *, u8 *, s16 *);
 extern u8 *func_020d6cb4(void);
 

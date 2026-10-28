@@ -3,7 +3,11 @@
 extern u32 data_02159074;
 extern u32 data_02159184;
 extern void func_02071e34(u32 a, s32 b);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_02071f20 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern s32 func_02071f20(u32 a);
+#else
 extern u16 func_02071f20(u32 a);
+#endif
 extern void func_02072cf0(u32 a, u32 b);
 extern void func_0207307c(u8 *a, u32 b);
 

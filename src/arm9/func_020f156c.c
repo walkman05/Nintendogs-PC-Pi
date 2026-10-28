@@ -5,7 +5,11 @@ typedef signed short s16;
 typedef signed int s32;
 extern u32 data_0215be40;
 extern u32 func_0210f100(u32 a, s32 b);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_0208d368 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern BOOL func_0208d368(u32 a);
+#else
 extern u8 func_0208d368(u32 a);
+#endif
 u32 func_020f156c(u32 param_1, s32 param_2)
 {
     u32 uVar4;

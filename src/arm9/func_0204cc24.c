@@ -34,6 +34,11 @@ void func_0204cc24(u8 *param_1, s32 param_2)
 
   uVar5 = 0xffffffff;
   uVar4 = 0xffffffff;
+#ifdef NDOGS_PC
+  /* r4 on entry: every caller leaves the dog (param_1) there, and the comparisons below read it when the dog has
+   * no target. Uninitialised on the PC, it sent dogs down random branches (jitter, sliding). */
+  unaff_r4 = (s32)param_1;
+#endif
   iVar2 = func_02036578(param_1);
   if (iVar2 != 0) {
     func_02027654(iVar2, param_1 + 0x26c);

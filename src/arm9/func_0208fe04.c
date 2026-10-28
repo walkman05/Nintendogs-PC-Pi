@@ -34,7 +34,11 @@ extern s32 func_02086688(F16 align, s32 w);
 extern s32 func_02086640(F16 valign, u32 h);
 extern u8 func_02085e50(Font *font, u32 c);
 extern void func_02086390(Font *font, s32 dst, s32 x, s32 y, u32 c, u32 color);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_02085f84 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern u32 func_02085f84(Font *font, u32 c);
+#else
 extern u8 func_02085f84(Font *font, u32 c);
+#endif
 extern const u16 *func_02090848(TextRect *out, const u16 *p, u32 color0, u32 *color, s32 *upper, u8 *ctx);
 
 const u16 *func_0208fe04(TextRect *out, Font *font, s32 dst, F16 align, F16 valign, s32 hspace,

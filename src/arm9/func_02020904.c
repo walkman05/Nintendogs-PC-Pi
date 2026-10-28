@@ -119,7 +119,11 @@ extern void func_020ddf0c(s32 a, u32 b);
 extern void func_020dde98(s32 a, s32 b);
 extern s32 func_020df020(void);
 extern void func_020df15c(void);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_02022e2c as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern int func_02022e2c(Pet *p, s32 b);
+#else
 extern u16 func_02022e2c(Pet *p, s32 b);
+#endif
 extern BOOL func_020dddb0(s32 a, s32 b);
 extern void func_02022a90(void);
 extern void func_020230fc(Pet *p);

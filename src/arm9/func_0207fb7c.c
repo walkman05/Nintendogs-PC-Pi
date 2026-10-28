@@ -3,7 +3,11 @@
 extern u32 data_0213e838;
 extern u32 func_0207faa8(void);
 extern s32 func_0207fbf4(void);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_0207fa74 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern u32 func_0207fa74(void);
+#else
 extern u8 func_0207fa74(void);
+#endif
 
 u32 func_0207fb7c(void)
 {

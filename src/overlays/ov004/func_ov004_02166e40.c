@@ -3,7 +3,11 @@
 extern int func_020f5220(void);
 extern void func_020f3bdc(u32 a);
 extern int func_02022dd0(int p);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_0203bc40 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern u16 func_0203bc40(int p);
+#else
 extern s16 func_0203bc40(int p);
+#endif
 extern int func_0202dc50(int p, int a, int b, int c, u8 d, int e);
 extern void func_02029504(int p);
 extern int func_0203567c(int p);

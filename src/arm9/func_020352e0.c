@@ -4,7 +4,11 @@ typedef struct { u32 w[3]; } T12;
 
 extern u32 data_02159444;
 extern u16 data_02126868[];
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_02068078 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern u32 func_02068078(u32 a, u32 b);
+#else
 extern s16 func_02068078(u32 a, u32 b);
+#endif
 extern void func_ov003_0218e690(u8 *p);
 extern void func_ov003_0219a690(u8 *p, s32 f);
 

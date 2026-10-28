@@ -135,7 +135,11 @@ extern void func_020ad234(Obj *p);
 extern fx32 func_01ff8958(fx32 a, fx32 b);
 extern void func_01ff832c(fx32 s, const VecFx32 *a, const VecFx32 *b, VecFx32 *out);
 extern void func_020bc024(VecFx32 *v);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_02068078 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern u32 func_02068078(fx32 y, fx32 x);
+#else
 extern u16 func_02068078(fx32 y, fx32 x);
+#endif
 extern void func_020ab02c(Obj *p, VecFx32 *out, const VecFx32 *in);
 extern void func_0200b644(VecFx32 *out, const VecFx32 *a, const VecFx32 *b, const VecFx32 *c, const VecFx32 *d);
 extern fx32 func_02027538(void *dog);

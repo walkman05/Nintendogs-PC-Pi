@@ -10,10 +10,18 @@ extern s32 func_020c1f34(u8 *);
 extern void func_02039448(u8 *);
 extern void func_02037450(u8 *, s32);
 extern s32 func_0203567c(u8 *);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_0203592c as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern u32 func_0203592c(u8 *, u8 *);
+#else
 extern u8 func_0203592c(u8 *, u8 *);
+#endif
 extern void func_0203e908(u8 *, s32);
 extern void func_020362f8(u8 *);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_02026c40 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern BOOL func_02026c40(u8 *, u8 *);
+#else
 extern u8 func_02026c40(u8 *, u8 *);
+#endif
 extern void func_0202fd7c(u8 *);
 extern void func_ov003_0219a368(u8 *);
 

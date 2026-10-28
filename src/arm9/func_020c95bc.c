@@ -13,7 +13,11 @@ extern s32 func_01ffdb08(s32 a);
 extern s32 func_02028130(s32 a);
 extern void func_02027668(s32 a, s32 *b);
 extern s32 func_02067898(s32 a, s32 b);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_0206824c as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern u16 func_0206824c(s32 a);
+#else
 extern s16 func_0206824c(s32 a);
+#endif
 
 #define FXP(a, b) ((s32)((((s64)(a) * (s64)(b)) + 0x800) >> 12))
 

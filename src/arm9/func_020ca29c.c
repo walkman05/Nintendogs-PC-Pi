@@ -9,7 +9,11 @@ extern void func_02067e34(s32 *a, s32 *b, s32 *out);
 extern void func_020cda6c(s32 *a, s32 *b, s32 *c, s32 *d, s32 *e);
 extern s32 func_02067df0(s32 *a, s32 *b);
 extern s32 func_02067898(s32 a, s32 b);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_0206824c as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern u16 func_0206824c(s32 a);
+#else
 extern s16 func_0206824c(s32 a);
+#endif
 
 void func_020ca29c(s32 *param_1, s32 *param_2, s32 param_3, s32 *param_4, s32 param_5,
                    s32 *param_6, s32 param_7, s32 param_8, s32 param_9)

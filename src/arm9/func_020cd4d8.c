@@ -21,7 +21,11 @@ extern s32 func_02067898(u32 a, u32 b);
 extern void func_020c8f34(void *a, void *b, void *c, void *d, void *e);
 extern void func_020c8e4c(s32 a, void *b);
 extern void func_020cda6c(void *a, void *b, void *c, void *d, void *e);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_0206824c as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern u16 func_0206824c(s32 a);
+#else
 extern s16 func_0206824c(s32 a);
+#endif
 extern s32 func_02067c30(void *a);
 
 void func_020cd4d8(s32 *param_1, s32 *param_2, u32 param_3)

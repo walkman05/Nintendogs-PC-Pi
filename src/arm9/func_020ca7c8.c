@@ -14,7 +14,11 @@ extern u32 func_020be240(void);
 extern s32 func_01ffdb08(s32 a);
 extern s32 func_02028130(s32 a);
 extern s32 func_02067898(s32 a, s32 b);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_02068078 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern u32 func_02068078(s32 a, u32 b);
+#else
 extern s16 func_02068078(s32 a, u32 b);
+#endif
 
 #define FX_Mul(a, b) ((s32)(((s64)(a) * (b) + 0x800) >> 12))
 

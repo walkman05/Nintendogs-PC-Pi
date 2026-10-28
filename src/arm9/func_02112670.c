@@ -2,7 +2,11 @@
 #pragma opt_loop_invariants off
 
 extern s32 data_0215be48;
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_02085cf4 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern u32 func_02085cf4(s32 a, s32 b);
+#else
 extern u16 func_02085cf4(s32 a, s32 b);
+#endif
 extern u8 *func_02085ccc(s32 a, s32 b);
 
 void func_02112670(s32 param_1, u16 *param_2, u32 param_3)

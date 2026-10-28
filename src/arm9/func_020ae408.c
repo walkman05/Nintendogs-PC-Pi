@@ -8,7 +8,11 @@ extern s32 func_01ffdb08(s32);
 extern s32 func_0202817c(s32);
 extern s32 *func_020941bc(s32);
 extern s32 func_020bc14c(void);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_02028100 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern u32 func_02028100(s32);
+#else
 extern u8 func_02028100(s32);
+#endif
 extern s32 *func_0208fc60(u8, s32);
 
 s32 *func_020ae408(s32 param_1, s32 param_2)

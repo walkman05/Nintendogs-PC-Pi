@@ -57,7 +57,11 @@ extern fx16 data_02126868[];
 extern Thing *func_0200c498(s32 a, s32 b);
 extern void func_02028894(Dog *dog, VecFx32 *a, VecFx32 *b);
 extern fx32 func_02028130(Dog *dog);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_02068078 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern u32 func_02068078(fx32 a, fx32 b);
+#else
 extern u16 func_02068078(fx32 a, fx32 b);
+#endif
 
 #define FX_MUL(a, b) ((s32)(((s64)(a) * (b) + 0x800) >> 12))
 

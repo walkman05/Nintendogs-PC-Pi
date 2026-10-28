@@ -62,7 +62,11 @@ extern Scr *data_02159428;
 extern u8 data_ov006_02165cbc[][8];
 
 extern void *func_0200c498(s32 a, s16 b);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_ov006_021649e8 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern u32 func_ov006_021649e8(s32 a);
+#else
 extern u8 func_ov006_021649e8(s32 a);
+#endif
 
 #define ST data_ov006_021661c4
 

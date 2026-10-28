@@ -6,7 +6,11 @@ extern u8 data_0214498c[];
 s32 func_020d5318(void);
 void func_0206f448(u32 a, u32 b, void *c);
 void func_0206fa0c(void *a, u32 b, void *c, s32 d, s32 e, s32 f);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_0206f284 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+u16 func_0206f284(void *a, u32 b);
+#else
 s32 func_0206f284(void *a, u32 b);
+#endif
 void func_020d51d0(u32 a, u32 b);
 void func_0206f380(void *a);
 u16 func_020d530c(void);

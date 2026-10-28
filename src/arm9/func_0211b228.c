@@ -1,7 +1,11 @@
 #include "ctx.h"
 
 u32 func_01ffdb08(s32 a);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_020341f0 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+u32 func_020341f0(u32 a);
+#else
 u8 func_020341f0(u32 a);
+#endif
 
 s32 func_0211b228(s32 param_1)
 {

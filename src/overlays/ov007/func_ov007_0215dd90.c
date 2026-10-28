@@ -4,7 +4,11 @@ extern int *data_ov007_02160d80;
 extern int func_ov007_0215d258;
 extern u8 data_ov007_02160888[];
 extern s32 func_020d6268(int *a, short *b);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_020d6c84 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern u32 func_020d6c84(void);
+#else
 extern s16 func_020d6c84(void);
+#endif
 extern u32 func_02080858(void);
 
 #define P8(p) ((u8 *)(p))

@@ -6,7 +6,11 @@ extern int func_02093990(void);
 extern int func_0210befc(u32 p1);
 extern int func_01ffdb08(int a);
 extern int func_0202817c(int a);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_02028100 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern u32 func_02028100(int a);
+#else
 extern u8 func_02028100(int a);
+#endif
 extern int func_0208fc60(u32 a, u32 b);
 
 int func_020bb2d0(u32 p1, u32 p2)

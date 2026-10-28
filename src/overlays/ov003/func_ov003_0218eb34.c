@@ -44,7 +44,11 @@ extern s32 func_0203567c(Obj *);
 extern void func_0203e8cc(Obj *, s32, s32);
 extern s32 func_0202d9e0(Obj *);
 extern void func_020a2f70(Obj *, s32);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_0203bc40 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern u16 func_0203bc40(Obj *);
+#else
 extern s16 func_0203bc40(Obj *);
+#endif
 extern s32 func_02023508(Obj *, s32, s32);
 extern s32 func_02024114(Obj *, s32);
 extern void func_020a2df8(Obj *, s32, u32);

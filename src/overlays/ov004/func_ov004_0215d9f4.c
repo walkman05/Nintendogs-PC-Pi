@@ -111,7 +111,11 @@ extern Stat *func_0202817c(s32 a);
 extern void func_02028184(s32 a);
 extern void func_0209fa4c(s32 a);
 extern void func_02093a04(s32 a);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_02027c58 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern u32 func_02027c58(s32 a);
+#else
 extern u16 func_02027c58(s32 a);
+#endif
 extern Msg *func_020f1314(s32 a, s32 b, s32 c);
 extern void func_ov004_0216cdf8(s32 a, s32 b);
 extern void func_020f3b6c(void);

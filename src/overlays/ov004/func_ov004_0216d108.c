@@ -1,6 +1,10 @@
 #include "ctx.h"
 
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_02035164 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern u32 func_02035164(int);
+#else
 extern u16 func_02035164(int);
+#endif
 extern void func_02026bac(int);
 extern void func_02025548(int);
 

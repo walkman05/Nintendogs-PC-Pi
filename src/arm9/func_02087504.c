@@ -2,7 +2,11 @@
 
 extern u32 func_02080b08(void);
 extern void func_02080b1c(u32 s);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_02087328 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern BOOL func_02087328(s32 *p);
+#else
 extern u8 func_02087328(s32 *p);
+#endif
 extern void func_02087248(s32 *p, s32 v);
 extern void func_020872ac(s32 *p);
 

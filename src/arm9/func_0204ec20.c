@@ -10,7 +10,11 @@ extern void func_0203e908(u8 *p, s32 code);
 extern void func_020362ec(u8 *p, s16 v);
 extern void func_0202707c(u8 *p, s32 v);
 extern void func_020362f8(u8 *p);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_02027708 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern s32 func_02027708(u8 *p);
+#else
 extern u8 func_02027708(u8 *p);
+#endif
 
 /* State machine on the s16 word at p2+0xea; one case per target block, in address order. */
 u32 func_0204ec20(u8 *param_1, u8 *param_2)

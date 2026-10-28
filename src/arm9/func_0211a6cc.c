@@ -1,5 +1,9 @@
 #include "ctx.h"
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_02027c58 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern u32 func_02027c58(u32 a);
+#else
 extern u16 func_02027c58(u32 a);
+#endif
 void func_0211a6cc(u8 *p)
 {
     u32 v = func_02027c58(*(u32 *)(p + 4));

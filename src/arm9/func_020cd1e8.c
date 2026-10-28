@@ -7,7 +7,11 @@ extern void func_02067e34(s32 *a, s32 *b, s32 *c);
 extern s32 func_02067df0(s32 *a, s32 *b);
 extern s32 func_02067898(s32 a, s32 b);
 extern s32 func_01ffdb08(s32 a);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_020341fc as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern u32 func_020341fc(s32 a);
+#else
 extern u8 func_020341fc(s32 a);
+#endif
 extern void func_020c8e4c(s32 a, s32 *b);
 extern void func_02027550(s32 a, s32 *b);
 extern s32 func_020c8eec(s32 a);

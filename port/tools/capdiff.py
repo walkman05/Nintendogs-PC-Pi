@@ -1,0 +1,182 @@
+"""Replay a captured call (cap_<name>_<n>.bin from a capture build: NDOGS_WRAP + NDOGS_CAPTURE, see host_compile.py)
+on the original ARM code under Unicorn, from the same memory, and compare everything it writes with what the host
+routine wrote.
+
+usage: python port/tools/capdiff.py cap_func_xxx_N.bin [...]"""
+import os, re, struct, sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from armrun import Arm, STOP  # noqa: E402
+from unicorn import UC_PROT_ALL, UC_HOOK_MEM_UNMAPPED  # noqa: E402
+from unicorn.arm_const import (UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3, UC_ARM_REG_SP,  # noqa
+                               UC_ARM_REG_LR, UC_ARM_REG_PC, UC_ARM_REG_CPSR)
+
+REGIONS = [(0x01ff8000, 0x8000), (0x02000000, 0x400000), (0x027c0000, 0x10000), (0x027f0000, 0x10000),
+           (0x037f0000, 0x10000)]
+STACK = 0x0e000000
+ARGS = [UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3]
+
+
+def load(path):
+    """[(header, {base: bytes}), ...] for before and after; the last region is a window of the host stack"""
+    d = open(path, 'rb').read()
+    out, off = [], 0
+    for k in range(2):
+        hdr = struct.unpack('<12I', d[off:off + 48])
+        off += 48
+        mem = {}
+        for base, s in REGIONS:
+            mem[base] = d[off:off + s]
+            off += s
+        wbase, wsize = struct.unpack('<2I', d[off:off + 8])
+        off += 8
+        mem[wbase] = d[off:off + wsize]
+        off += wsize
+        out.append((hdr, mem))
+    return out
+
+
+def host_functions(mapfile):
+    """host address -> ARM address of every func_ symbol in the linker map"""
+    out = {}
+    for l in open(mapfile, errors='replace'):
+        m = re.match(r'\s+0x([0-9a-f]+)\s+_?func_(?:ov\d+_)?([0-9a-f]{8})\s*$', l)
+        if m:
+            out[int(m.group(1), 16)] = int(m.group(2), 16)
+    return out
+
+
+def addr_of(name):
+    m = re.match(r'func_(?:ov\d+_)?([0-9a-f]{8})$', name)
+    return int(m.group(1), 16)
+
+
+def ranges(a, b, base):
+    """differing byte ranges between two buffers"""
+    out, i, n = [], 0, len(a)
+    while i < n:
+        if a[i] != b[i]:
+            j = i
+            while j < n and (a[j] != b[j] or (j + 1 < n and a[j + 1] != b[j + 1]) or (j + 2 < n and a[j + 2] != b[j + 2])):
+                j += 1
+            out.append((base + i, j - i))
+            i = j
+        else:
+            i += 1
+    return out
+
+
+def replay(path, arm):
+    name = re.match(r'cap_(func_\w+?)_(\d+)\.bin$', os.path.basename(path)).group(1)
+    (bh, before), (ah, after) = load(path)
+    uc = arm.uc
+    uc.context_restore(arm.snapshot)
+    for base, data in before.items():
+        page = base & ~0xfff
+        try:
+            uc.mem_map(page, ((base + len(data) + 0xfff) & ~0xfff) - page, UC_PROT_ALL)
+        except Exception:
+            pass  # already mapped
+        uc.mem_write(base, data)
+    uc.reg_write(UC_ARM_REG_CPSR, 0x1f)
+    args = bh[4:12]
+    for i in range(4):
+        uc.reg_write(ARGS[i], args[i])
+    sp = STACK + 0x8000
+    uc.mem_write(sp, struct.pack('<4I', *args[4:8]))  # arguments 5-8 on the stack
+    uc.reg_write(UC_ARM_REG_SP, sp)
+    uc.reg_write(UC_ARM_REG_LR, STOP)
+    try:
+        uc.emu_start(addr_of(name), STOP, count=50000000)
+        if uc.reg_read(UC_ARM_REG_PC) != STOP:
+            return name, 'ARM did not return (pc %08x)' % uc.reg_read(UC_ARM_REG_PC), None
+    except Exception as e:
+        return name, 'ARM error %s at pc %08x' % (e, uc.reg_read(UC_ARM_REG_PC)), None
+    diffs = []
+    for base, data in after.items():
+        if base not in before:
+            continue
+        arm_mem = bytes(uc.mem_read(base, len(data)))
+        for a, n in ranges(arm_mem, data, base):
+            diffs.append((a, n, arm_mem[a - base:a - base + min(n, 32)], data[a - base:a - base + min(n, 32)]))
+    # what the routine wrote at all (host): context for the diffs
+    wrote = sum(n for base, data in after.items() if base in before for a, n in ranges(before[base], data, base))
+    r0 = uc.reg_read(UC_ARM_REG_R0)
+    return name, 'args %s, host wrote %d bytes, r0 arm %08x host %08x' % (
+        ' '.join('%08x' % x for x in args[:6]), wrote, r0, ah[2]), diffs
+
+
+def arm_trace(arm, path, names):
+    """replay like replay(), recording calls of the named routines: [(name, r0, r1, r2, r3)]"""
+    from unicorn import UC_HOOK_CODE
+    calls, hooks = [], []
+    for n in names:
+        addr = addr_of(n)
+        hooks.append(arm.uc.hook_add(UC_HOOK_CODE, lambda uc, a, size, nm: calls.append(
+            (nm,) + tuple(uc.reg_read(r) for r in ARGS) + (bytes(uc.mem_read(arm.obj, 0xa00)),)), n, begin=addr, end=addr))
+    result = replay(path, arm)
+    for h in hooks:
+        arm.uc.hook_del(h)
+    return calls, result
+
+
+def compare_traces(arm, path):
+    tpath = path[:-4] + '.trace'
+    host = [l.split() for l in open(tpath)]
+    host = [(h[0],) + tuple(int(x, 16) for x in h[1:5]) + (bytes.fromhex(h[5]),) for h in host]
+    arm.obj = load(path)[0][0][4]
+    names = sorted(set(h[0] for h in host) | set(n for n in open(os.environ.get('NDOGS_TRACE_NAMES', 'callees.txt')).read().split(',') if n.strip()))
+    names = [n.strip() for n in names if re.match(r'func_[0-9a-f]{8}$', n.strip())]
+    arm_calls, _ = arm_trace(arm, path, names)
+    top = re.match(r'cap_(func_\w+?)_\d+\.bin$', os.path.basename(path)).group(1)
+    if arm_calls and arm_calls[0][0] == top:
+        arm_calls = arm_calls[1:]  # the captured routine's own entry
+    print('%s: host %d calls, arm %d calls' % (os.path.basename(path), len(host), len(arm_calls)))
+    for i in range(max(len(host), len(arm_calls))):
+        h = host[i] if i < len(host) else None
+        a = arm_calls[i] if i < len(arm_calls) else None
+        same = h and a and h[0] == a[0]
+        fmt = lambda c: '%s(%s)' % (c[0], ' '.join('%08x' % x for x in c[1:5])) if c else '-'
+        print('  %s %-62s %s' % ('  ' if same else '!!', fmt(a), fmt(h)))
+        if not same:
+            break
+        if a[5] != h[5]:  # the object differs on entry to this call: the bug is between this and the previous call
+            offs = [k for k in range(0xa00) if a[5][k] != h[5][k]]
+            print('     object differs here, first at +0x%x: %s' % (offs[0], ' '.join(
+                '+%x:%02x/%02x' % (k, a[5][k], h[5][k]) for k in offs[:16])))
+            break
+
+
+def main():
+    arm = Arm()
+    arm.uc.mem_map(0x027c0000, 0x10000, UC_PROT_ALL)
+    arm.uc.mem_map(0x037f0000, 0x10000, UC_PROT_ALL)
+    arm.uc.mem_map(STACK, 0x10000, UC_PROT_ALL)
+    for base, size in ((0x04002000, 0xffe000), (0x05000000, 0x10000), (0x06000000, 0x900000), (0x07000000, 0x10000)):
+        arm.uc.mem_map(base, size, UC_PROT_ALL)  # I/O, palettes, VRAM, OAM: present but not modelled
+    # code pointers in game data point at the host's compiled C: plant an ARM jump to the original at each one
+    mapfile = os.environ.get('NDOGS_MAP', 'objs_cap/nintendogs_cap.exe.map')
+    funcs = host_functions(mapfile)
+    lo, hi = min(funcs) & ~0xfff, (max(funcs) + 0x1fff) & ~0xfff
+    arm.uc.mem_map(lo, hi - lo, UC_PROT_ALL)
+    prev = -16
+    for h in sorted(funcs):
+        if h - prev >= 8:
+            arm.uc.mem_write(h, struct.pack('<2I', 0xe51ff004, funcs[h]))  # ldr pc, [pc, #-4]; .word target
+            prev = h
+    arm.snapshot = arm.uc.context_save()
+    if sys.argv[1] == '--trace':
+        for path in sys.argv[2:]:
+            compare_traces(arm, path)
+        return
+    for path in sys.argv[1:]:
+        name, info, diffs = replay(path, arm)
+        verdict = 'FAILED TO RUN' if diffs is None else 'MATCH' if not diffs else '%d differing ranges' % len(diffs)
+        print('%s: %s -> %s' % (os.path.basename(path), info, verdict))
+        diffs = diffs or []
+        for a, n, x, y in diffs[:12]:
+            print('   %08x +%d: arm %s | host %s' % (a, n, x.hex(), y.hex()))
+
+
+if __name__ == '__main__':
+    main()

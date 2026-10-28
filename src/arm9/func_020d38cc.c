@@ -1,7 +1,11 @@
 #include "ctx.h"
 
 extern int func_020bc1c4(void);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_020c8db4 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern s32 func_020c8db4(int v);
+#else
 extern s16 func_020c8db4(int v);
+#endif
 extern void func_020c98c0(void *p, int v);
 
 #define DISPATCH(p)                                              \

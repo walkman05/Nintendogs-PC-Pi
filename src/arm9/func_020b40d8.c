@@ -4,7 +4,11 @@ extern int data_021425d0;
 extern u8 *data_0215942c;
 extern int func_01ffdb08(int a);
 extern int func_0202817c(int a);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_02028100 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern u32 func_02028100(int a);
+#else
 extern u8 func_02028100(int a);
+#endif
 extern int func_0208fc60(u32 a, u32 b);
 
 int func_020b40d8(int param_1, u32 param_2)

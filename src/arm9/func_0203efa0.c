@@ -269,7 +269,11 @@ extern void func_02041d4c(Dog *d);
 extern void func_02041408(Dog *d);
 extern void func_0204135c(Dog *d);
 extern void func_020bc024(s32 *v);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_02068078 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern u32 func_02068078(s32 a, s32 b);
+#else
 extern s16 func_02068078(s32 a, s32 b);
+#endif
 extern void func_020aadac(void *a, s32 b);
 extern void func_0208fa4c(Dog *d, void *a, s32 b);
 extern void func_0208fad4(Dog *d, void *a);

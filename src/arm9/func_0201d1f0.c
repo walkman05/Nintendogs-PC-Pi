@@ -6,7 +6,11 @@ extern u32 func_020399ac(u8 *);
 extern u32 func_0203996c(u8 *);
 extern u32 func_020398e4(u8 *);
 extern void func_020398a8(u8 *);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_02035a6c as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern BOOL func_02035a6c(u8 *);
+#else
 extern u8 func_02035a6c(u8 *);
+#endif
 extern void func_02039920(u8 *);
 
 static inline u8 SwapByte(u32 v, vu8 *p)

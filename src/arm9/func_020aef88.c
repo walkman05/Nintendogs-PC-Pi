@@ -1,13 +1,21 @@
 #include "ctx.h"
 
 extern u8 *data_02159468;
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_020ad77c as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern s32 func_020ad77c(u8 *);
+#else
 extern u8 func_020ad77c(u8 *);
+#endif
 extern u32 func_020bb04c(u8 *);
 extern void func_020ad7c8(u8 *, s32);
 extern u32 func_020ad6fc(u8 *, u32);
 extern void func_020ab4fc(u8 *);
 extern u32 func_020af094(u8 *);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_020ad690 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern u32 func_020ad690(u8 *);
+#else
 extern u8 func_020ad690(u8 *);
+#endif
 extern void func_020ad8f0(u8 *);
 extern s32 func_020bd548(s32);
 extern void func_020bca08(s32);

@@ -182,7 +182,11 @@ extern void func_ov004_02162e74(void);
 extern void func_0209fb38(s32 a, s32 b, s32 c);
 extern void func_0209f59c(s32 a);
 extern void func_020f3b54(void);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_02028118 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern u32 func_02028118(s32 a);
+#else
 extern u16 func_02028118(s32 a);
+#endif
 
 #define G data_ov004_02170320
 

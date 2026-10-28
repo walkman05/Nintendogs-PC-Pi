@@ -14,7 +14,11 @@ typedef struct {
 typedef struct { u8 pad[0x30]; Obj *obj; } Mgr;
 
 extern Mgr *data_02159424;
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_02093054 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern s32 func_02093054(void);
+#else
 extern s16 func_02093054(void);
+#endif
 extern void func_020955e4(Obj *p, s16 a);
 extern void func_02093160(Obj *p, s16 a);
 extern void func_02095670(Obj *p);

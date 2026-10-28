@@ -12,7 +12,11 @@ void func_020c8e4c(s32 a, s32 *b);
 s32 func_02028130(s32 a);
 s32 func_020678b4(s32 *a, s32 *b);
 s32 func_02067898(s32 a, s32 b);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_0206824c as defined (x86 extends by the caller's prototype, the DS by the callee) */
+u16 func_0206824c(s32 a);
+#else
 s32 func_0206824c(s32 a);
+#endif
 
 void func_020ccd5c(s32 *param_1, s32 *param_2, s32 param_3)
 {

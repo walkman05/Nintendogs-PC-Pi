@@ -13,7 +13,11 @@ extern void func_02006a30(Vec3 *a, Vec3 *out);
 extern void func_02067d04(Vec3 *a, Vec3 *b, Vec3 *out);
 extern s32 func_02067df0(Vec3 *a, Vec3 *b);
 extern s32 func_02067898(s32 a, s32 b);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_0206824c as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern u16 func_0206824c(s32 x);
+#else
 extern s32 func_0206824c(s32 x);
+#endif
 extern s32 func_02067c30(Vec3 *v);
 extern void func_01ff832c(s32 x, Vec3 *b, Vec3 *p, Vec3 *a);
 extern s32 data_02142e40;

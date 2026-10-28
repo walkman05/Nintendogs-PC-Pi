@@ -1,7 +1,11 @@
 #include "ctx.h"
 
 extern u32 data_ov007_02160d80;
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_020d6c84 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern u32 func_020d6c84(void);
+#else
 extern s16 func_020d6c84(void);
+#endif
 
 u32 func_ov007_0215da48(void)
 {

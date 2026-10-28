@@ -1,7 +1,11 @@
 #include "ctx.h"
 extern void func_020be1d8(u32 a);
 extern u32 func_02062164(void);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_020be190 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern u16 func_020be190(void);
+#else
 extern s16 func_020be190(void);
+#endif
 extern void func_020be1a4(u32 a);
 extern u32 func_020be1ec(void);
 extern u32 func_020be1fc(void);

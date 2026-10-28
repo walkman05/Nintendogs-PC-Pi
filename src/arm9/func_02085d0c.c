@@ -11,7 +11,11 @@ typedef struct {
     u16 a;
 } Half;
 
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_02085e20 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+u16 func_02085e20(u8 *p);
+#else
 s16 func_02085e20(u8 *p);
+#endif
 s32 func_02085c30(Half p, u32 b);
 s32 func_02085be8(Half p, u32 b);
 

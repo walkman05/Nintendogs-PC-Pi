@@ -5,7 +5,11 @@ extern void func_02080b1c(u32 v);
 extern s32 func_020d7be8(void);
 extern s32 func_020d7c2c(void);
 extern s32 func_020d7d34(void);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_020d5284 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern u32 func_020d5284(void);
+#else
 extern s16 func_020d5284(void);
+#endif
 extern s32 func_020d7e20(void);
 extern void func_020d7fc0(int v);
 extern void func_020d7fa4(u32 a, u32 b);
@@ -14,7 +18,11 @@ extern s32 func_020d7ce0(void);
 extern s32 func_020d7c18(void);
 extern s32 func_020d7cbc(void);
 extern s32 func_020d7c40(void);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_020d5270 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern u32 func_020d5270(void);
+#else
 extern s16 func_020d5270(void);
+#endif
 extern void func_020d7e8c(void);
 
 void func_0209a730(s16 *param_1)

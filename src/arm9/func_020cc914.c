@@ -13,7 +13,11 @@ extern void func_020c8e4c(s32 a, s32 *b);
 extern s32 func_02028130(s32 a);
 extern s32 func_020678b4(s32 *a, s32 *b);
 extern s32 func_02067898(s32 a, s32 b);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_0206824c as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern u16 func_0206824c(s32 a);
+#else
 extern s32 func_0206824c(s32 a);
+#endif
 
 typedef struct { s32 a; s32 b; s32 c; } Triple;
 

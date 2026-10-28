@@ -5,7 +5,11 @@ extern u8 *data_02159060;
 extern s32 func_02111b58(void);
 extern void func_020fcf48(void);
 extern void func_02111b3c(void);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_020039f4 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern BOOL func_020039f4(void);
+#else
 extern u8 func_020039f4(void);
+#endif
 
 void func_0211ece4(void)
 {

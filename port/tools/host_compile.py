@@ -59,6 +59,63 @@ def windows_target(cc):
     return 'mingw' in r.stdout or 'cygwin' in r.stdout
 
 
+def capture_wrappers(names):
+    """C for --wrap wrappers: NDOGS_CAPTURE=<name>@<call>[,...] dumps DS memory and the arguments before and after
+    that call of that routine to cap_<name>_<call>.bin (read by port/tools/capdiff.py)"""
+    c = ['#include <stdio.h>', '#include <stdlib.h>', '#include <string.h>',
+         'typedef unsigned int u32; typedef unsigned long long u64;',
+         'static const u32 regions[][2] = { {0x01ff8000u, 0x8000u}, {0x02000000u, 0x400000u}, '
+         '{0x027c0000u, 0x10000u}, {0x027f0000u, 0x10000u}, {0x037f0000u, 0x10000u} };',
+         'static int cap_want(const char *name, int n)',
+         '{',
+         '    const char *p = getenv("NDOGS_CAPTURE");',
+         '    size_t l = strlen(name);',
+         '    while (p && (p = strstr(p, name))) {',
+         '        if (p[l] == 64 && atoi(p + l + 1) == n) return 1;',
+         '        p += l;',
+         '    }',
+         '    return 0;',
+         '}',
+         'static FILE *cap_file, *cap_trace;',
+         'static int cap_depth;  /* > 0 while a captured call runs: wrapped calls are traced */',
+         'static u32 cap_obj;    /* first argument of the captured call: dumped (0xa00 bytes) at each traced call */',
+         'static void cap_obj_dump(void) { unsigned i; for (i = 0; i < 0xa00; i++) fprintf(cap_trace, "%02x", ((unsigned char *)cap_obj)[i]); fputc(10, cap_trace); }',
+         'static void cap_dump(const char *name, int n, const u32 *a, int after, u64 ret)',
+         '{',
+         '    unsigned i;',
+         '    u32 hdr[12];',
+         '    if (!after) {',
+         '        char fn[96];',
+         '        snprintf(fn, sizeof fn, "cap_%s_%d.bin", name, n);',
+         '        cap_file = fopen(fn, "wb");',
+         '    }',
+         '    if (!cap_file) return;',
+         '    hdr[0] = 0x50414344u; hdr[1] = (u32)after; hdr[2] = (u32)ret; hdr[3] = (u32)(ret >> 32);',
+         '    memcpy(hdr + 4, a, 32);',
+         '    fwrite(hdr, 4, 12, cap_file);',
+         '    for (i = 0; i < sizeof regions / sizeof regions[0]; i++) fwrite((void *)regions[i][0], 1, regions[i][1], cap_file);',
+         '    { /* the caller frames on the host stack (structures passed by pointer live there) */',
+         '        u32 win[2]; win[0] = (u32)a; win[1] = 0x2000;',
+         '        fwrite(win, 4, 2, cap_file); fwrite((void *)win[0], 1, win[1], cap_file); }',
+         '    if (after) { fclose(cap_file); cap_file = 0; fprintf(stderr, "captured %s call %d%c", name, n, 10); }',
+         '}']
+    for n in names:
+        c += ['extern u64 __real_%s(u32, u32, u32, u32, u32, u32, u32, u32);' % n,
+              'u64 __wrap_%s(u32 a0, u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7)' % n,
+              '{',
+              '    static int calls;',
+              '    u32 *a = &a0;  /* the incoming arguments, in the caller frame */',
+              '    int hit = cap_want("%s", ++calls);' % n,
+              '    u64 r;',
+              '    if (cap_depth && cap_trace) { fprintf(cap_trace, "%s %%08x %%08x %%08x %%08x ", a0, a1, a2, a3); cap_obj_dump(); }' % n,
+              '    if (hit) { char fn[96]; snprintf(fn, sizeof fn, "cap_%s_%%d.trace", calls); cap_trace = fopen(fn, "w"); cap_obj = a0; cap_dump("%s", calls, a, 0, 0); cap_depth++; }' % (n, n),
+              '    r = __real_%s(a0, a1, a2, a3, a4, a5, a6, a7);' % n,
+              '    if (hit) { cap_depth--; cap_dump("%s", calls, a, 1, r); if (cap_trace) fclose(cap_trace); cap_trace = 0; }' % n,
+              '    return r;',
+              '}']
+    return '\n'.join(c) + '\n'
+
+
 def link(cc, objs, out):
     """data_/bss_ symbols are absolute at the address their name gives (DS memory is mapped there at run time)."""
     win = windows_target(cc)
@@ -82,11 +139,17 @@ def link(cc, objs, out):
                 f.write('.globl %s%s\n%s%s:\n    jmp %s%s\n' % (us, a, us, a, us, b))
     subprocess.run([cc, '-m32', '-c', stub, '-o', stub[:-2] + '.o'], check=True)
     objs = list(objs) + [stub[:-2] + '.o']
+    wrap = [x for x in os.environ.get('NDOGS_WRAP', '').split(',') if x]
+    if wrap:  # capture build for port/tools/capdiff.py: wrap these routines (see capture_wrappers)
+        wsrc = os.path.join(OBJDIR, 'capture_wraps.c')
+        open(wsrc, 'w').write(capture_wrappers(wrap))
+        subprocess.run([cc] + FLAGS + ['-O0', '-c', wsrc, '-o', wsrc[:-2] + '.o'], check=True)
+        objs.append(wsrc[:-2] + '.o')
     rsp = os.path.join(OBJDIR, 'objs.rsp')
     with open(rsp, 'w') as f:
         f.write('\n'.join(o.replace('\\', '/') for o in objs))
     # fixed load address (no ASLR): keeps the program clear of the DS address range and makes the map usable
-    flags = ['-m32', '-Wl,-Map=' + out + '.map'] + (['-Wl,--disable-dynamicbase', '-Wl,--image-base=0x10000000'] if win else ['-no-pie', '-Wl,-Ttext-segment=0x10000000'])
+    flags = ['-m32', '-Wl,-Map=' + out + '.map'] + ['-Wl,--wrap=' + w for w in wrap] + (['-Wl,--disable-dynamicbase', '-Wl,--image-base=0x10000000'] if win else ['-no-pie', '-Wl,-Ttext-segment=0x10000000'])
     libs = [] if win else ['-ldl', '-lpthread']  # dlopen (ALSA, X11), worker threads
     r = subprocess.run([cc] + flags + ['@' + rsp, script, '-o', out] + libs,
                        capture_output=True, text=True)

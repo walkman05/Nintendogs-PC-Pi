@@ -54,7 +54,11 @@ typedef struct Tbl {
 extern u8 *data_0215be4c;
 extern ObjSize data_02147ce4[];
 
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_02085cf4 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+u32 func_02085cf4(s32 a, s32 b);
+#else
 u16 func_02085cf4(s32 a, s32 b);
+#endif
 u8 *func_02085ca4(s32 a, s32 b);
 Cell *func_02085ccc(s32 a, s32 b);
 void func_020864fc(void *a, u32 b, u32 c, u32 d, u32 e, u32 f);

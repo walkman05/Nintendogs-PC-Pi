@@ -13,7 +13,11 @@ s32 func_02028130(s32 a);
 void func_01ff832c(s32 a, s32 *b, s32 *c, s32 *d);
 void func_02027618(s32 a, s32 *b);
 void func_02081aec(u8 *p, s32 *a, s32 *b);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_02028118 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+u32 func_02028118(s32 a);
+#else
 u16 func_02028118(s32 a);
+#endif
 
 void func_ov005_02163180(u8 *param_1)
 {

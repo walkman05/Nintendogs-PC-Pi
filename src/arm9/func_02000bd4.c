@@ -1,7 +1,11 @@
 #include "ctx.h"
 
 u32 func_02080b08(void);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_0207eef8 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+u16 func_0207eef8(u32 a);
+#else
 u32 func_0207eef8(u32 a);
+#endif
 u32 func_0207efb4(u32 a);
 void func_02080b1c(u32 a);
 void WaitByLoop(u32 n);

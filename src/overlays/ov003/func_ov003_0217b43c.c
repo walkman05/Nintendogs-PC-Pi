@@ -11,7 +11,11 @@ void func_02037450(u8 *p, s32 v);
 s32 func_02035770(u8 *p, s32 a);
 s32 func_02035744(u8 *p, s32 a);
 s32 func_02028124(u8 *p);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_02068078 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+u32 func_02068078(s32 a, s32 b);
+#else
 s16 func_02068078(s32 a, s32 b);
+#endif
 u32 func_02029504(u8 *p);
 u32 func_0203852c(u8 *p);
 u32 func_0203e908(u8 *p, s32 a);

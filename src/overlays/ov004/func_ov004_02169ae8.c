@@ -9,7 +9,11 @@ s32 func_020f5220(void);
 void func_020f3bdc(s32 a);
 void func_ov004_02169ff4(u8 *p);
 s32 func_02022dd0(u8 *p);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_0203bc40 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+u16 func_0203bc40(u8 *p);
+#else
 s16 func_0203bc40(u8 *p);
+#endif
 s32 func_0202dc50(u8 *p, s32 a, s32 b, s32 c, u8 d, s32 e);
 void func_02029504(u8 *p);
 s32 func_020c1f34(u8 *p);

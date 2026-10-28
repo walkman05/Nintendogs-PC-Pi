@@ -44,7 +44,11 @@ extern s32 func_02044ca0(s32 a);
 extern void func_01ff832c(s32 a, VecFx32 *b, VecFx32 *c, VecFx32 *d);
 extern void func_020eed7c(Obj *p, u8 *q);
 extern void func_020c5fec(Obj *p);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_02068078 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern u32 func_02068078();
+#else
 extern u16 func_02068078();
+#endif
 
 void func_020eec10(Obj *obj)
 {

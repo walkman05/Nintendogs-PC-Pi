@@ -2,7 +2,11 @@
 
 extern u32 *data_0214f464;
 extern void func_020a12dc(int a, int b, int c, int *d);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_02009f38 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern s32 func_02009f38(int *a, int *b);
+#else
 extern u8 func_02009f38(int *a, int *b);
+#endif
 
 typedef struct {
     int w0;

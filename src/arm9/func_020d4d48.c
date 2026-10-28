@@ -9,12 +9,24 @@ extern void func_020d4228(void);
 extern s32 func_020d68ec(u8 *p);
 extern void func_020d68c8(void *fn, u16 *b);
 extern s32 func_02064a34(void *fn);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_020d5e60 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern u32 func_020d5e60(void);
+#else
 extern u16 func_020d5e60(void);
+#endif
 extern void func_020d5e70(void *fn, u32 r, u16 *p);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_020d5fa0 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern u32 func_020d5fa0(u32 v);
+#else
 extern u16 func_020d5fa0(u32 v);
+#endif
 extern void func_020d5da4(u32 v);
 extern u8 *func_020d6cc0(void);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_020d5f30 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern u32 func_020d5f30(void);
+#else
 extern u16 func_020d5f30(void);
+#endif
 extern s32 func_020d64d4(void *fn, u16 *p);
 
 #define STORE_STATE(CODE, TAIL)                                                  \

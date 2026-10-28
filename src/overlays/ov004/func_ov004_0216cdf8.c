@@ -3,7 +3,11 @@
 
 extern u32 data_0214f464;
 extern void func_02029290(u32 obj, u32 a, u32 b);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_02028100 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern u32 func_02028100(u32 obj);
+#else
 extern s8 func_02028100(u32 obj);
+#endif
 
 static inline u32 SwapByte(u32 v, vu8 *p)
 {

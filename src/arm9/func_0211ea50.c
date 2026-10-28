@@ -2,7 +2,11 @@
 extern u8 data_0215be48[];
 extern u16 *func_0210f100(s32 a, s32 b);
 extern u8 *func_01ffdb08(s32 a);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_02028100 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern u32 func_02028100(u8 *p);
+#else
 extern u8 func_02028100(u8 *p);
+#endif
 extern s32 func_0208fc60(u32 a, u32 b);
 extern s32 func_020fc938(s32 a, s32 b, u32 c, s32 d);
 

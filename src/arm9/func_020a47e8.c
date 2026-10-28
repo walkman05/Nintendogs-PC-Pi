@@ -5,7 +5,11 @@ extern void *func_02044ccc(s32 i);
 extern s32 func_020931a8(s16 p);
 extern void func_0206c7d4(s32 a, u16 *b, u32 c);
 extern u32 func_02044a30(s32 a, u16 *b);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_0208cae4 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern u32 func_0208cae4(void *a, u32 b, u16 c);
+#else
 extern u8 func_0208cae4(void *a, u32 b, u16 c);
+#endif
 
 u32 func_020a47e8(s16 param_1)
 {

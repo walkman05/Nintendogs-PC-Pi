@@ -2,7 +2,11 @@ typedef unsigned char u8;
 typedef unsigned int u32;
 typedef signed short s16;
 extern u32 func_020bd858(u32 p);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_020bd868 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern u32 func_020bd868(u32 p);
+#else
 extern u8 func_020bd868(u32 p);
+#endif
 u32 func_020e6ef0(u32 param_1)
 {
     s16 sVar1;

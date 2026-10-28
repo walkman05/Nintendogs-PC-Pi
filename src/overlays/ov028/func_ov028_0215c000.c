@@ -6,7 +6,11 @@ extern s32 func_ov028_0215cc70(void);
 extern s32 func_ov028_0215cc94(void);
 extern void func_ov028_0215c2e0(int v);
 extern s32 func_ov028_0215cbac(void);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_ov028_0215d6dc as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern u32 func_ov028_0215d6dc(void);
+#else
 extern s16 func_ov028_0215d6dc(void);
+#endif
 extern void func_ov028_0215ccec(void);
 extern void func_ov028_0215c1a0(void);
 extern void func_ov028_0215c670(int v);

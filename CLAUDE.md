@@ -113,6 +113,23 @@ Porting hazard checks done: a UB-trap build (`NDOGS_CFLAGS="-fsanitize=shift-exp
 in 90 s of gameplay (func_0209b940, fixed). Checked and fine: char signedness (mwcc -char signed), 64-bit struct
 alignment, the game-logic inline-asm replacements, FX_Div/FX_Inv host routines.
 
+Differential testing against the original ARM code (Unicorn: `pip install unicorn`):
+- `port/tools/armrun.py` runs ARM9 code from the extracted ROM (main RAM/ITCM/DTCM, divider and sqrt modelled).
+- `port/tools/difftest.py` compares every pure host routine (args in, value out) with the original on random and
+  edge inputs. All 21 match (compiler runtime incl. soft float, fixed-point helpers).
+- Capture/replay for routines working on game state: build with `NDOGS_WRAP=func_a,func_b,...` (linker --wrap,
+  separate objdir) and run with `NDOGS_CAPTURE=func_a@<call>,...`: the wrapper dumps DS memory, the caller frames and
+  the arguments before/after that call (cap_*.bin) and traces wrapped calls made meanwhile (cap_*.trace, with the
+  first argument's object). `port/tools/capdiff.py cap_*.bin` replays on the ARM code from the same memory and
+  diffs everything written (host code pointers in game data become ARM jumps via the .map); `--trace` finds the
+  first call where the traced object diverges. The dog animation ITCM routines and their helpers match; the per-dog
+  update (func_01ffb34c) matches in 32 of 34 replays (one known divergence in func_02038b10's dog loop).
+- Found this way: func_0204cc24 read r4 left by its caller (the dog) through an uninitialised `unaff_r4` (fixed);
+  narrow return types: on the DS a callee's code decides how r0 is extended and callers use r0 as is, on x86 the
+  caller's prototype decides. `port/tools/retscan.py` lists definitions vs mismatching caller declarations and
+  `port/tools/retfix.py` gives those callers the definition's type under #ifdef NDOGS_PC (201 declarations in 185
+  files, e.g. FX_Atan2Idx (func_02068078) declared s16 made half of all directions negative and broke turning).
+
 Porting hazard: pass-through register arguments. A function that forwards r1-r3 untouched to a callee was
 sometimes decompiled with too few parameters (matching on the DS, garbage on the PC). func_0208f7d0 dropped the
 light flags for func_02077e04, which set the dogs' material to depth-test-equal and hid them. `port/tools/argscan.py`

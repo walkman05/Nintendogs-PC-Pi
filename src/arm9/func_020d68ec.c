@@ -2,7 +2,11 @@
 extern u8 data_021594ec[];
 extern u8 data_021594e8[];
 extern u8 data_021594d8[];
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_020647d0 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern u16 func_020647d0(void);
+#else
 extern s32 func_020647d0(void);
+#endif
 u32 func_020d68ec(u8 *param_1)
 {
     s32 flag;

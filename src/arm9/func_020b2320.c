@@ -21,7 +21,11 @@ void func_020b2694(s32 a, s32 b, s32 c);
 void func_020b0564(u8 *a, s32 b);
 void func_02108908(void);
 void func_02108960(void);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_ov006_0216204c as defined (x86 extends by the caller's prototype, the DS by the callee) */
+s32 func_ov006_0216204c(void);
+#else
 s16 func_ov006_0216204c(void);
+#endif
 
 typedef struct { u8 pad[6]; s16 v; u8 pad2[2]; } Ent;
 typedef struct { u8 pad[0x18]; Ent ent[4]; } Obj;

@@ -11,7 +11,11 @@ extern s16 data_02126868[];
 s32 func_0203b3cc(u8 *p);
 u32 func_02028124(u8 *p);
 u32 func_02028130(u8 *p);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_02068078 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+u32 func_02068078(s32 a, s32 b);
+#else
 s16 func_02068078(s32 a, s32 b);
+#endif
 s32 func_0203541c(u8 *p);
 
 static inline s32 Rnd12(void)

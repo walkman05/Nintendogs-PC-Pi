@@ -10,7 +10,11 @@ extern void func_0202756c(s32 a, s32 *b);
 extern s32 func_02028130(s32 a);
 extern void func_01ff832c(s32 a, s32 *b, s32 *c, s32 *d);
 extern void func_02081aec(u8 *p, s32 *a, s32 *b);
+#ifdef NDOGS_PC /* NDOGS_PC: return type of func_02028118 as defined (x86 extends by the caller's prototype, the DS by the callee) */
+extern u32 func_02028118(s32 a);
+#else
 extern u16 func_02028118(s32 a);
+#endif
 
 /* a18: a17 with iVar4 declared first (pp second, iVar6 last) and the piVar2 deref at the end. The first term has no rounding
    (the target's subs/sbc has no adds #0x800). */
