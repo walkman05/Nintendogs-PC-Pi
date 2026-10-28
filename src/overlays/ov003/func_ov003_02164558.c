@@ -88,7 +88,11 @@ void func_ov003_02164558(Dog *dog)
     fx32 z;
     fx32 x;
     fx32 r;
+#ifdef NDOGS_PC /* NDOGS_PC: widened: holds func_02068078's value unchanged, as the DS register does */
+    u32 angle;
+#else
     u16 angle;
+#endif
 
     if (data_0215942c->mode == 1 || data_0215942c->mode == 4) {
         Thing *t = func_0200c498(0, 0);

@@ -18,7 +18,11 @@ u32 func_ov005_0215c854(u8 *p, s32 p2)
     s32 iv3;
     u32 iv4;
     s32 t;
+#ifdef NDOGS_PC /* NDOGS_PC: widened: holds func_02041f04's value unchanged, as the DS register does */
+    u32 u;
+#else
     u16 u;
+#endif
 
     if ((*(u16 *)(data_02159444 + 0x84) & 1) == 0) {
         *(u16 *)(p + 0x11a) = *(u16 *)(p + 0x11a) + 1;

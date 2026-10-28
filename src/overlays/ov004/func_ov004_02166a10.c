@@ -39,7 +39,11 @@ void func_ov004_02166a10(int param_1)
 {
   u8 bVar1;
   s32 bVar2;
+#ifdef NDOGS_PC /* NDOGS_PC: widened: holds func_0203bc40's value unchanged, as the DS register does */
+  u32 sVar3;
+#else
   s16 sVar3;
+#endif
   u32 uVar4;
 
   *(s32 *)(param_1 + 0x484) = 0;

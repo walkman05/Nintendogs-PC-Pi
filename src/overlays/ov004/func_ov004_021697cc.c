@@ -25,7 +25,11 @@ void func_ov004_021697cc(u8 *param_1, s32 param_2, u16 param_3, s32 param_4)
     s32 iVar3;
     s32 idx;
     u8 *obj;
+#ifdef NDOGS_PC /* NDOGS_PC: widened: holds func_0203bc40's value unchanged, as the DS register does */
+    u32 sVar2;
+#else
     s16 sVar2;
+#endif
     u32 uVar5;
     T3 loc;
 

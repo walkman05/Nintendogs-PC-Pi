@@ -45,7 +45,11 @@ void func_ov004_0216863c(u8 *param_1)
     s32 iVar9;
     s32 iVar7;
     s32 bVar4;
+#ifdef NDOGS_PC /* NDOGS_PC: widened: holds func_0203bc40's value unchanged, as the DS register does */
+    u32 sVar6;
+#else
     s16 sVar6;
+#endif
     struct { s16 sStack_38; u16 local_36[4]; u16 local_2e; u16 local_2c[4]; u16 local_24; u8 pad[6]; } fr;
     s64 lVar2;
     u32 uVar11;

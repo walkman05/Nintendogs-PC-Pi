@@ -63,7 +63,11 @@ void func_ov003_0218eb34(Obj *p)
     s32 iVar2;
     s32 iVar3;
     u32 uVar6;
+#ifdef NDOGS_PC /* NDOGS_PC: widened: holds func_0203bc40's value unchanged, as the DS register does */
+    u32 sVar1;
+#else
     s16 sVar1;
+#endif
 
     func_020364cc(p);
     iVar2 = *(s32 *)(data_02159444 + 0x1c);

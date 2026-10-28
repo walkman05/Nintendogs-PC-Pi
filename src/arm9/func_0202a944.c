@@ -16,7 +16,11 @@ typedef struct {
 
 u32 func_0202a944(int param_1)
 {
+#ifdef NDOGS_PC /* NDOGS_PC: widened: holds func_02009f38's value unchanged, as the DS register does */
+    s32 bVar2;
+#else
     u8 bVar2;
+#endif
     u16 sgn;
     int iVar6;
     int iVar5;

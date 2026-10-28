@@ -53,7 +53,11 @@ void func_02120558(u8 *param_1)
     u16 local_3a[3];
     s32 iVar3;
     u32 uVar13, uVar12, uVar11;
+#ifdef NDOGS_PC /* NDOGS_PC: widened: holds func_02028100's value unchanged, as the DS register does */
+    u32 cVar3;
+#else
     s8 cVar3;
+#endif
     u16 uVar1;
     u32 *u32p;
     u32 xx;

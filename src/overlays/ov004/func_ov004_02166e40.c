@@ -16,7 +16,11 @@ extern void func_0203e908(int p, s16 v);
 void func_ov004_02166e40(int param_1)
 {
     int iVar3;
+#ifdef NDOGS_PC /* NDOGS_PC: widened: holds func_0203bc40's value unchanged, as the DS register does */
+    u32 sVar2;
+#else
     s16 sVar2;
+#endif
     s32 sv;
 
     *(s32 *)(param_1 + 0x484) = 0;

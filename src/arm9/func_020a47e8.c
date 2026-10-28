@@ -13,7 +13,11 @@ extern u8 func_0208cae4(void *a, u32 b, u16 c);
 
 u32 func_020a47e8(s16 param_1)
 {
+#ifdef NDOGS_PC /* NDOGS_PC: widened: holds func_0208cae4's value unchanged, as the DS register does */
+    u32 bVar1;
+#else
     u8 bVar1;
+#endif
     u16 *puVar2;
     s32 iVar3;
     u32 uVar4;

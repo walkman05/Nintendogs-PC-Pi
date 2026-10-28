@@ -18,7 +18,11 @@ extern u16 func_020645c4(void);
 
 void func_020d5da4(u16 param_1)
 {
+#ifdef NDOGS_PC /* NDOGS_PC: widened: holds func_020645c4's value unchanged, as the DS register does */
+    u32 r;
+#else
     u16 r;
+#endif
 
     data_02159500.h4 = param_1;
     data_02159500.p0 = &data_02159560;

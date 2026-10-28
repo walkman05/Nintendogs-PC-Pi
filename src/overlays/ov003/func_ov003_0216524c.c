@@ -15,7 +15,11 @@ typedef struct { u8 pad[0x152]; u16 s0; u8 pad2[4]; u16 s1; } Obj;
 void func_ov003_0216524c(u8 *p)
 {
     Obj *o = (Obj *)p;
+#ifdef NDOGS_PC /* NDOGS_PC: widened: holds func_02035164's value unchanged, as the DS register does */
+    u32 r;
+#else
     u16 r;
+#endif
     o->s0 = 0x111;
     r = func_02035164(p);
     o->s1 = r;

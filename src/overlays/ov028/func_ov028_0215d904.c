@@ -15,7 +15,11 @@ extern u32 func_020d5e70(u32 a, u32 b, u16 *c);
 void func_ov028_0215d904(void)
 {
     u32 uVar7;
+#ifdef NDOGS_PC /* NDOGS_PC: widened: holds func_020d5e60's value unchanged, as the DS register does */
+    u32 uVar4;
+#else
     u16 uVar4;
+#endif
     u32 uVar6;
     s32 iVar5;
     s32 bVar3;

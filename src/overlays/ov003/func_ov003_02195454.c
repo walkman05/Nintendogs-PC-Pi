@@ -32,7 +32,11 @@ u32 func_ov003_02195454(u8 *param_1)
     s32 iVar5;
     u32 uVar6;
     s32 iVar7;
+#ifdef NDOGS_PC /* NDOGS_PC: widened: holds func_020274ac's value unchanged, as the DS register does */
+    u32 bVar3;
+#else
     u8 bVar3;
+#endif
 
     iVar4 = func_020364cc(param_1);
     iVar5 = func_02036544(param_1);

@@ -26,7 +26,11 @@ s32 func_02085d0c(u8 *param_1, s32 param_2, s32 param_3)
     Half t;
     s32 iVar3;
     s32 iVar4;
+#ifdef NDOGS_PC /* NDOGS_PC: widened: holds func_02085e20's value unchanged, as the DS register does */
+    u32 cnt;
+#else
     s16 cnt;
+#endif
     s32 lx;
     s32 ly;
 

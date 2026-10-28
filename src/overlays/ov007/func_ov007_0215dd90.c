@@ -17,7 +17,11 @@ void func_ov007_0215dd90(void)
 {
     short asStack_8[2];
     int *piVar2;
+#ifdef NDOGS_PC /* NDOGS_PC: widened: holds func_020d6c84's value unchanged, as the DS register does */
+    u32 sVar2;
+#else
     s16 sVar2;
+#endif
 
     if ((*(s16 *)(P8(data_ov007_02160d80) + 0x38) != 0) &&
         (*(s16 *)(P8(data_ov007_02160d80) + 0x38) == 1) &&

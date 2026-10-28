@@ -19,7 +19,11 @@ void func_020d71a0(u8 *param_1)
 {
     s16 sStack_10;
     u8 auStack_e[6];
+#ifdef NDOGS_PC /* NDOGS_PC: widened: holds func_020d5fa0's value unchanged, as the DS register does */
+    u32 uVar1;
+#else
     u16 uVar1;
+#endif
     u8 *iVar2;
     u32 uVar3;
     BOOL bVar4;

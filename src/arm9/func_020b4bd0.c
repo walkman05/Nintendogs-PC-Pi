@@ -15,7 +15,11 @@ s32 func_020b4bd0(s32 param_1, u32 param_2)
 {
     s32 iVar2;
     s32 iVar3;
+#ifdef NDOGS_PC /* NDOGS_PC: widened: holds func_02028100's value unchanged, as the DS register does */
+    u32 bVar1;
+#else
     u8 bVar1;
+#endif
 
     iVar3 = (s32)&data_021425d4;
     switch (param_1) {

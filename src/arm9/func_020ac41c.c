@@ -461,7 +461,11 @@ void func_020ac41c(Obj *p)
         func_01ff832c((s32)t * cur->y, &vB, &p->pos, &p->pos);
         func_020bc024(&vK);
         if (p->num != -1) {
+#ifdef NDOGS_PC /* NDOGS_PC: widened: holds func_02068078's value unchanged, as the DS register does */
+            u32 ang;
+#else
             u16 ang;
+#endif
             fx32 d;
             ang = func_02068078(-vK.x, -vK.z);
             a.x = FX_SinIdx(ang);

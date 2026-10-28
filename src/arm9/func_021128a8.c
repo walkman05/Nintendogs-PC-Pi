@@ -13,7 +13,11 @@ void func_021128a8(int param_1, int param_2, u32 param_3)
     int cnt;
     int iVar2;
     int iVar3;
+#ifdef NDOGS_PC /* NDOGS_PC: widened: holds func_02085cf4's value unchanged, as the DS register does */
+    u32 uVar1;
+#else
     s16 uVar1;
+#endif
     u32 sh;
 
     iVar2 = data_0215be48 + 0x1dec + param_1 * 0x294;

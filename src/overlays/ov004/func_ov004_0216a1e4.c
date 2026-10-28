@@ -12,7 +12,11 @@ s32 func_ov004_0216a1e4(u8 *param_1)
 {
     s32 bVar1;
     u8 uVar2;
+#ifdef NDOGS_PC /* NDOGS_PC: widened: holds func_0203bc40's value unchanged, as the DS register does */
+    u32 sVar3;
+#else
     s16 sVar3;
+#endif
     s32 iVar4;
     if (*(s16 *)(param_1 + 0xf0) == 0x52) {
         func_02027f40(param_1, 1, 0x2710);

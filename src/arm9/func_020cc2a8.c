@@ -33,7 +33,11 @@ void func_020cc2a8(int *param_1, int *param_2, int param_3)
     s32 iVar3a;
     s32 iVar4;
     s64 lVar1;
+#ifdef NDOGS_PC /* NDOGS_PC: widened: holds func_0206824c's value unchanged, as the DS register does */
+    u32 sVar2;
+#else
     s16 sVar2;
+#endif
     s32 iVar3cb;
     s32 iVar9b;
     s32 iVar6b;

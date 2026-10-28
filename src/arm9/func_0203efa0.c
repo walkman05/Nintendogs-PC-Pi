@@ -116,7 +116,11 @@ typedef struct {
 typedef struct {
     u16 f0;
     u16 f2;
+#ifdef NDOGS_PC /* NDOGS_PC: widened: holds func_02068078's value unchanged, as the DS register does */
+    u32 ang;
+#else
     u16 ang;
+#endif
     u16 f6;
     VecFx32 pos;
 } Obj;

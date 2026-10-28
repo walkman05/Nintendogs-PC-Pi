@@ -22,7 +22,11 @@ void func_020c9404(s32 *param_1, s32 param_2)
     s32 iVar4;
     s32 iVar5;
     s32 iVar6;
+#ifdef NDOGS_PC /* NDOGS_PC: widened: holds func_0206824c's value unchanged, as the DS register does */
+    u32 sVar3;
+#else
     s16 sVar3;
+#endif
     s32 t0;
     s32 t1;
 

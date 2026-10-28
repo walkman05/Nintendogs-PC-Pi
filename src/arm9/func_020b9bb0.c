@@ -16,7 +16,11 @@ extern short *func_020ad8f0(int a);
 
 short *func_020b9bb0(short *param_1)
 {
+#ifdef NDOGS_PC /* NDOGS_PC: widened: holds func_020ad690's value unchanged, as the DS register does */
+    u32 bVar1;
+#else
     u8 bVar1;
+#endif
 
     switch (param_1[0x17]) {
     case 0:

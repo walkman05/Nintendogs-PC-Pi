@@ -21,7 +21,11 @@ s32 func_02112320(s32 param_1, s32 param_2, s32 param_3)
     s32 b2;
     s32 s1;
     s32 s2;
+#ifdef NDOGS_PC /* NDOGS_PC: widened: holds func_02085e20's value unchanged, as the DS register does */
+    u32 sVar1;
+#else
     s16 sVar1;
+#endif
     s16 uVar2;
 
     iVar5 = 0;

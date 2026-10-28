@@ -11,7 +11,11 @@ extern u8 func_020254ec(u8 *p);
 
 u8 func_0205885c(u8 *p)
 {
+#ifdef NDOGS_PC /* NDOGS_PC: widened: holds func_0203833c's value unchanged, as the DS register does */
+    s32 h;
+#else
     u16 h;
+#endif
     h = func_0203833c();
     *(u16 *)(p + 256 + 82) = h;
     *(u8 *)(p + 147) = 5;

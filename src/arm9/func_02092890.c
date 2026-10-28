@@ -14,7 +14,11 @@ void func_02092890(u16 *param_1, s32 param_2, s32 param_3, s32 param_4, s16 para
     u16 *puVar5;
     s16 iVar3;
     s16 iVar4;
+#ifdef NDOGS_PC /* NDOGS_PC: widened: holds func_020929a8's value unchanged, as the DS register does */
+    s32 bVar2;
+#else
     u8 bVar2;
+#endif
 
     if (param_3 < 2) {
         return;

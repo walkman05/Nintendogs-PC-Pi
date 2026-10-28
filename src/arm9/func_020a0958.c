@@ -11,7 +11,11 @@ u8 func_020a366c(void);
 void func_020a0958(int param_1)
 {
     u8 *iVar1;
+#ifdef NDOGS_PC /* NDOGS_PC: widened: holds func_020a366c's value unchanged, as the DS register does */
+    u32 cVar2;
+#else
     u8 cVar2;
+#endif
 
     cVar2 = func_020a366c();
     if (cVar2 == 0xff) {

@@ -131,8 +131,12 @@ Differential testing against the original ARM code (Unicorn: `pip install unicor
   files, e.g. FX_Atan2Idx (func_02068078) declared s16 made half of all directions negative and broke turning).
   Same cause one step further: a caller that stores such a result in a narrow local keeps the callee's value on
   the DS (the register isn't re-extended), so those locals are widened under NDOGS_PC (the 11 s16 locals that
-  receive FX_Atan2Idx: dog chase velocity, other-dog loop, turning helpers). Other mismatched functions' narrow
-  receivers have not been reviewed yet.
+  receive FX_Atan2Idx: dog chase velocity, other-dog loop, turning helpers). `port/tools/retlocals.py` does this for
+  every mismatched function: it finds narrow locals receiving the result, checks the original ARM code after the
+  call for re-extension, and (`--apply`) widens the ones the DS kept unextended, unless the variable has other
+  writes or its address is taken (listed as REVIEW): 80 files widened. Not done: 8 REVIEW sites and 7 files where
+  the declaration sits inside a multi-line macro (func_020cac38/cae5c/cb080/cb7f4/cbc3c/cc084/cc4cc, receivers of
+  func_0206824c).
 - Captures include the I/O register page (e.g. POWCNT, which the game reads for the screen swap) as replay input;
   capdiff aligns traces (ARM traces also show recursion and helpers the host calls directly) and resumes at the
   ARM original when execution lands on an unaligned host function. In the whistle/jump-at-camera scenario all 37

@@ -11,7 +11,11 @@ extern u32 func_02025600(u8 *self);
 
 u32 func_ov003_02166094(u8 *param_1)
 {
+#ifdef NDOGS_PC /* NDOGS_PC: widened: holds func_0203833c's value unchanged, as the DS register does */
+    s32 t;
+#else
     u16 t;
+#endif
     t = func_0203833c();
     *(u16 *)(param_1 + 256 + 82) = t;
     param_1[147] = 5;

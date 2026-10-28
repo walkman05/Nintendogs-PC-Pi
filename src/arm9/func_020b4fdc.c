@@ -14,7 +14,11 @@ extern u32 func_020ad8f0(u8 *p);
 
 u32 func_020b4fdc(u8 *param_1)
 {
+#ifdef NDOGS_PC /* NDOGS_PC: widened: holds func_020ad690's value unchanged, as the DS register does */
+    u32 bVar2;
+#else
     u8 bVar2;
+#endif
 
     switch (*(s16 *)(param_1 + 0x2e)) {
     case 0:

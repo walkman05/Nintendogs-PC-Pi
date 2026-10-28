@@ -6,7 +6,11 @@ typedef struct { fx32 x, y, z; } VecFx32;
 typedef struct { fx32 m[3][3]; } MtxFx33;
 
 typedef struct {
+#ifdef NDOGS_PC /* NDOGS_PC: widened: holds func_02022e2c's value unchanged, as the DS register does */
+    s32 id;
+#else
     u16 id;                 /* 0x00 */
+#endif
     u16 count;              /* 0x02 */
     u8 pad04[0x28 - 0x04];
     u8 owner;               /* 0x28 */

@@ -13,7 +13,11 @@ extern int func_0208fc60(u32 a, u32 b);
 
 int func_020b1374(int param_1, u32 param_2)
 {
+#ifdef NDOGS_PC /* NDOGS_PC: widened: holds func_02028100's value unchanged, as the DS register does */
+    u32 bVar1;
+#else
     u8 bVar1;
+#endif
     int iVar2;
     int iVar3;
 

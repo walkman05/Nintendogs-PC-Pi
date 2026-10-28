@@ -38,7 +38,11 @@ void func_ov005_02163d4c(u8 *param_1, s32 param_2, u32 *param_3)
   s32 iVar3;
   u32 st[118];
   V3 *tb;
+#ifdef NDOGS_PC /* NDOGS_PC: widened: holds func_02028118's value unchanged, as the DS register does */
+  u32 idx;
+#else
   u16 idx;
+#endif
 
   switch (param_2) {
   case 0:

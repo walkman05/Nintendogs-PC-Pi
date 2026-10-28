@@ -13,7 +13,11 @@ void func_02112670(s32 param_1, u16 *param_2, u32 param_3)
 {
     u32 lim = 0xffff;
     u16 *walk;
+#ifdef NDOGS_PC /* NDOGS_PC: widened: holds func_02085cf4's value unchanged, as the DS register does */
+    u32 uVar3;
+#else
     u16 uVar3;
+#endif
     s32 iVar5;
     s32 base;
     u32 sh;

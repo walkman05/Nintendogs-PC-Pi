@@ -31,7 +31,11 @@ void func_ov004_02167ff0(u8 *param_1)
     s32 iVar5;
     s32 iVar7;
     s32 bVar3;
+#ifdef NDOGS_PC /* NDOGS_PC: widened: holds func_0203bc40's value unchanged, as the DS register does */
+    u32 sVar4;
+#else
     s16 sVar4;
+#endif
 
     iVar7 = *(s16 *)(data_02159444 + 0x7a);
     if (iVar7 < 0 || *(s16 *)(data_02159468 + 0x20) <= iVar7) {

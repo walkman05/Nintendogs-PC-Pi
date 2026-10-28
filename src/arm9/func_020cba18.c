@@ -29,7 +29,11 @@ void func_020cba18(s32 *p1, s32 *p2, s32 p3)
     s32 iv3;
     s32 iv4;
     s32 iv6;
+#ifdef NDOGS_PC /* NDOGS_PC: widened: holds func_0206824c's value unchanged, as the DS register does */
+    u32 sVar2;
+#else
     s16 sVar2;
+#endif
     s32 k2;
     s32 k1;
 

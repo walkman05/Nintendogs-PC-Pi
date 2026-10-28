@@ -10,7 +10,11 @@ u16 *func_02085ef4(int param_1, u16 *param_2, int *param_3, int param_4)
 {
     u16 uVar1;
     u32 uVar2;
+#ifdef NDOGS_PC /* NDOGS_PC: widened: holds func_02085f84's value unchanged, as the DS register does */
+    u32 bVar3;
+#else
     u8 bVar3;
+#endif
     int iVar4;
 
     uVar1 = *param_2;

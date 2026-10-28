@@ -18,7 +18,11 @@ extern void func_ov028_0215c670(int v);
 void func_ov028_0215c000(void)
 {
     s32 bVar1;
+#ifdef NDOGS_PC /* NDOGS_PC: widened: holds func_ov028_0215d6dc's value unchanged, as the DS register does */
+    u32 sVar2;
+#else
     s16 sVar2;
+#endif
     s32 iVar3;
 
     switch (*(s16 *)data_ov028_0215df00) {

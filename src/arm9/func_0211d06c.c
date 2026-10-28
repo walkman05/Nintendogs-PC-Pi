@@ -81,7 +81,11 @@ void func_0211d06c(int *param_1)
     u16 *puVar10;
     u16 *puVar11;
     u32 uVar12;
+#ifdef NDOGS_PC /* NDOGS_PC: widened: holds func_02028100's value unchanged, as the DS register does */
+    u32 bVar4;
+#else
     u8 bVar4;
+#endif
     s32 uVar23;
     u16 auStack_50[10];
     u16 auStack_3c[12];

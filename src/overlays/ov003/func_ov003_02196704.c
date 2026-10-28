@@ -25,7 +25,11 @@ u32 func_ov003_02196704(u32 param_1)
     s32 aiStack_40[3];
     s32 aiStack_34[3];
     s32 local_28[6];
+#ifdef NDOGS_PC /* NDOGS_PC: widened: holds func_020274ac's value unchanged, as the DS register does */
+    u32 bVar1;
+#else
     u8 bVar1;
+#endif
 
     iVar3 = func_02036544(param_1);
     iVar4 = func_020364cc(param_1);

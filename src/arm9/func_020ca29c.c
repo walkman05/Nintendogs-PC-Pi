@@ -29,7 +29,11 @@ void func_020ca29c(s32 *param_1, s32 *param_2, s32 param_3, s32 *param_4, s32 pa
     s32 iVar5;
     s32 iVar6;
     s32 iVar7;
+#ifdef NDOGS_PC /* NDOGS_PC: widened: holds func_0206824c's value unchanged, as the DS register does */
+    u32 sVar2;
+#else
     s16 sVar2;
+#endif
     volatile s32 flag;
     s32 fl;
 

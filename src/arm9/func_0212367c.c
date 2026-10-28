@@ -77,7 +77,11 @@ void func_0212367c(s32 *param_1, u32 param_2)
   u32 local_2c;
   u32 local_28;
   s16 sv5;
+#ifdef NDOGS_PC /* NDOGS_PC: widened: holds func_0211b330's value unchanged, as the DS register does */
+  s32 sv3;
+#else
   s16 sv3;
+#endif
 
   piVar7 = (s32 *)((u8 *)param_1 + 0x1cf4);
   switch (p[8]) {

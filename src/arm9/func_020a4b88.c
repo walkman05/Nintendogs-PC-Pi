@@ -43,7 +43,11 @@ static inline void MI_CpuClear16(void *dest, u32 size)
 
 void func_020a4b88(s16 param)
 {
+#ifdef NDOGS_PC /* NDOGS_PC: widened: holds func_02093054's value unchanged, as the DS register does */
+    s32 idx;
+#else
     s16 idx;
+#endif
     Obj *obj;
     s16 i;
 
