@@ -212,8 +212,13 @@ int ndogs_load_main(const char *dir)
     {
         char hp[400];
         FILE *hf;
-        snprintf(hp, sizeof hp, "%s/host/header.bin", data_dir);
-        hf = fopen(hp, "rb");
+        extern int ndogs_full;
+        snprintf(hp, sizeof hp, "%s/host/full_header.bin", data_dir);  /* port/tools/make_full_rom.py */
+        hf = ndogs_full ? fopen(hp, "rb") : 0;
+        if (!hf) {
+            snprintf(hp, sizeof hp, "%s/host/header.bin", data_dir);
+            hf = fopen(hp, "rb");
+        }
         if (hf) {
             if (fread((void *)0x027ffe00u, 1, 0x170, hf) != 0x170)
                 fprintf(stderr, "loader: short cartridge header\n");

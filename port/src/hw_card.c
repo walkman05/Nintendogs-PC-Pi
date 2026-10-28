@@ -20,6 +20,14 @@ void hw_card_open(const char *data_dir)
 {
     char p[400], path[400];
     FILE *f;
+    extern int ndogs_full;
+    /* full-game mode: the demo ROM with the retail cartridge's text and files (port/tools/make_full_rom.py) */
+    snprintf(p, sizeof p, "%s/host/full.nds", data_dir);
+    if (ndogs_full && (rom = fopen(p, "rb")) != 0) {
+        fseek(rom, 0, SEEK_END);
+        rom_size = (u32)ftell(rom);
+        return;
+    }
     snprintf(p, sizeof p, "%s/host/rom_path.txt", data_dir);
     f = fopen(p, "r");
     if (!f || !fgets(path, sizeof path, f)) {
