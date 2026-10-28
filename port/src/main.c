@@ -243,6 +243,10 @@ int main(int argc, char **argv)
         return 1;
     }
     hw_card_open(dir);
+    {
+        extern void ndogs_save_set_dir(const char *data_dir);
+        ndogs_save_set_dir(dir);
+    }
     if (getenv("NDOGS_TRAPBENCH")) {  /* cost of one trapped register access */
         extern double now_ms(void);
         double t0 = now_ms();

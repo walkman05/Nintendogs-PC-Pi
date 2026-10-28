@@ -93,6 +93,10 @@ void func_02099ffc(void)
     if (*(s32 *)(data_02159064 + 0xc) < 0x1c20) {
         goto Lcc;
     }
+#ifdef NDOGS_PC
+    if (ndogs_full) /* full-game mode: no kiosk reset after 2 minutes without input */
+        goto Lcc;
+#endif
     func_0206fdf0();
     uVar5 = func_0207ee60();
     func_0206555c((u16)uVar5);

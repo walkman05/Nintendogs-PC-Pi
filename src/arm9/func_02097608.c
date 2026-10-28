@@ -49,6 +49,21 @@ static inline void SetChecksum(u8 *buf, u32 size)
     f->sum = sum;
 }
 
+#ifdef NDOGS_PC
+/* full-game mode: where the retail game starts writing an entry's copy A (at its chip address) or copy B (0x20000
+ * higher) to the save chip; entry words: chip address, copy A, copy B, length (port/src/save.c) */
+extern void ndogs_save_write(u32 addr, const void *src, u32 len);
+static inline void save_write(void *e, int copy_b)
+{
+    u32 *w = (u32 *)e;
+    if (ndogs_full)
+        ndogs_save_write(w[0] + (copy_b ? 0x20000 : 0), (void *)w[copy_b ? 2 : 1], w[3]);
+}
+#define SAVE_WRITE(e, b) save_write(e, b)
+#else
+#define SAVE_WRITE(e, b)
+#endif
+
 BOOL func_02097608(void)
 {
     Ctx *ctx = data_02159034;
@@ -66,6 +81,7 @@ BOOL func_02097608(void)
                 d = func_020978d0(0, 0);
                 SetChecksum(d->bufA, d->size);
             }
+            SAVE_WRITE(e, 0);
             break;
         }
         case 1:
@@ -77,20 +93,25 @@ BOOL func_02097608(void)
                     d = func_020978d0(0, 0);
                     SetChecksum(d->bufB, d->size);
                 }
+                SAVE_WRITE(&data_02159034->entries[data_02159034->idx], 1);
             } else {
                 if (data_02159034->entries[data_02159034->idx].ptr != NULL) {
                     d = func_020978d0(0, 0);
                     SetChecksum(d->bufA, d->size);
                 }
+                SAVE_WRITE(&data_02159034->entries[data_02159034->idx], 0);
             }
             break;
         case 2:
             ctx->idx++;
             if (data_02159034->idx >= data_02159034->count) {
                 data_02159034->state = 3;
-            } else if (data_02159034->entries[data_02159034->idx].ptr != NULL) {
-                d = func_020978d0(0, 0);
-                SetChecksum(d->bufB, d->size);
+            } else {
+                if (data_02159034->entries[data_02159034->idx].ptr != NULL) {
+                    d = func_020978d0(0, 0);
+                    SetChecksum(d->bufB, d->size);
+                }
+                SAVE_WRITE(&data_02159034->entries[data_02159034->idx], 1);
             }
             break;
         case 3:

@@ -196,6 +196,26 @@ func_0208cc2c/0208cdfc/0208db60/020fdb24 leave don't-care registers for callees 
   the game. `NDOGS_GL=0` uses GDI instead, `NDOGS_VSYNC=0` turns vsync off. Linux still uses XPutImage.
 - Not done: microphone (the full game's name calling), direct channel/stream sound commands (unused so far).
 
+## Full-game mode
+The kiosk demo is the full game with gates in front: the code for the shops, walks, hotel, remodelling, training
+and contests is in the ROM, but most text was blanked out and a few files left out. `ndogs_full` (port/src/main.c,
+default on; `--demo` restores the kiosk) lifts the gates behind `#ifdef NDOGS_PC` + `if (ndogs_full)`.
+- Data: `python port/tools/make_full_rom.py --demo baserom.nds --retail <Dachshund & Friends (E).nds>` builds
+  `extracted/host/full.nds` (+ `full_header.bin`): the demo ROM with every message file rebuilt in the demo's layout
+  with the retail text by message ID (message ends found by walking 0x1a control codes, which can hold zero
+  halfwords), and the retail-only files appended. The demo's directory/file order (file IDs) is kept and the image
+  stays within 64 MB. The port reads card and header from it in full-game mode when present.
+- Kennel: Buy (func_0211c69c button 0, dropped in the demo) opens the kennel shop through the kept state-4 path;
+  func_0211c964 no longer greys it out. func_0208b604 borrows a similar breed's shop icon if one is missing.
+- func_02099ffc: no kiosk reset (NIS_ResetTrial) after 2 minutes without input.
+- Mode values (`NDOGS_PTRWATCH=0215942c` logs changes): c000 door/title, 0xd kennel, 0x12 kennel Look (demo),
+  0 Home, 17 end-of-demo scene (entered via func_020a8868 event 22 -> func_020a7d74; still open).
+- Save: the demo has no backup-memory code; the retail game's (CARD backup calls around 0x02096000-0x02097800 in
+  its arm9) reads/writes the blocks of the layout table data_0212f5c0 (Registory, Dog, SoundCol, Voice, HotelDog,
+  HotelSC, Friend), each twice (copy B 0x20000 higher). port/src/save.c stands in for the chip with
+  <data>/save/nintendogs.sav at chip addresses: func_02096880 reads both copies, func_02097608 (the write task;
+  entries {chip address, copy A, copy B, length, desc}) writes where retail starts each card write.
+
 ## Build
 ```
 cmake -S . -B build -A Win32                 # Windows (Visual Studio)
