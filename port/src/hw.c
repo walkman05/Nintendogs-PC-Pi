@@ -14,7 +14,7 @@ extern void hw_page_open(u32 addr, int open);
 static int video_pending, vblank_pending;
 extern void video_frame(void);
 extern void video_vblank(void);
-extern u32 window_keys(void);
+extern u32 input_keys(void);
 static u32 current_line(void);
 
 u32 hw_irq_count[32], hw_pxi_msgs;
@@ -311,7 +311,7 @@ void hw_io_prepare_read(u32 addr)
         break;
     }
     case 0x04000130: /* KEYINPUT: from the window's keyboard */
-        R16(0x04000130) = (u16)(window_keys() & 0x03ff);
+        R16(0x04000130) = (u16)(input_keys() & 0x03ff);
         break;
     case 0x04000180: /* IPCSYNC */
         R32(0x04000180) = (R32(0x04000180) & ~0xfu) | hw.arm7_sync;

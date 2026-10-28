@@ -24,7 +24,7 @@ Two things live here:
 
 ## Milestones
 M0 infra (this) · M1 ROM extraction · M2 host compile of all C · M3 memory/overlay loading · M4 hardware layer ·
-M5 window + rendering (boots to the title) · M6 input, audio, polish.
+M5 window + rendering (boots to the menu and gameplay) · M6 input, audio, polish.
 
 ## ROM extraction (milestone 1)
 `python port/tools/extract_rom.py --rom <baserom.nds> --dsd <dsd>` uses AetiasHax/ds-decomp (dsd v0.12.1, MIT) to
@@ -98,7 +98,12 @@ drawn yet (milestone 5).
 - 3D debugging: `NDOGS_GXSTAT=1` prints per-second polygon fates (drawn/clipped/culled) and command counts;
   `NDOGS_GXDUMP=<swap>` traces one frame's matrix commands, POLYGON_ATTR/TEXIMAGE writes with host call chains,
   and its polygon list. `NDOGS_HWWATCH=<addr>` (Windows) logs every write to a RAM word with the writer's chain.
-Status: 60 fps through the intro, title and the demo's attract scene with the dogs (~9 ms per frame).
+- Scripted input for headless tests: `NDOGS_TOUCH="<frame>,<x>,<y>,<frames>;..."` (stylus on the bottom screen),
+  `NDOGS_KEYS="<frame>,<mask>,<frames>;..."` (KEYINPUT bits). Reaching the demo's menu and gameplay:
+  `NDOGS_TOUCH="900,128,100,6;940,128,100,6;980,128,100,6;1300,207,166,6;1500,207,166,6;1700,115,131,6"`
+  (knock x3, two "proceed" arrows, Look) with `NDOGS_SHOT=1600,2400`.
+Status: boots, knocks, reaches the Kennel menu (Buy/Look) and the Home gameplay screen with the three dogs at 60 fps
+(~10 ms per frame).
 
 Porting hazard: pass-through register arguments. A function that forwards r1-r3 untouched to a callee was
 sometimes decompiled with too few parameters (matching on the DS, garbage on the PC). func_0208f7d0 dropped the

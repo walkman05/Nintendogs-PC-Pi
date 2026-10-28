@@ -92,11 +92,49 @@ void video_vblank(void)
     }
 }
 
+/* Scripted input for test runs (frame numbers as in NDOGS_SHOT):
+ * NDOGS_TOUCH="<frame>,<x>,<y>,<frames>;..." holds the stylus at (x, y) on the bottom screen,
+ * NDOGS_KEYS="<frame>,<mask>,<frames>;..." holds DS buttons (KEYINPUT bits: 1 A, 2 B, 4 Select, 8 Start, 0x10 Right,
+ * 0x20 Left, 0x40 Up, 0x80 Down, 0x100 R, 0x200 L, 0x400 X, 0x800 Y). */
+static int frame;
+
+static int script_find(const char *env, int nvals, int *vals)
+{
+    const char *p = getenv(env);
+    while (p && *p) {
+        int v[4] = { 0, 0, 0, 0 }, i;
+        for (i = 0; i < nvals + 2 && *p && *p != ';'; i++) {
+            v[i] = (int)strtol(p, (char **)&p, 0);
+            if (*p == ',')
+                p++;
+        }
+        if (frame >= v[0] && frame < v[0] + v[nvals + 1]) {
+            for (i = 0; i < nvals; i++)
+                vals[i] = v[i + 1];
+            return 1;
+        }
+        while (*p && *p != ';')
+            p++;
+        if (*p == ';')
+            p++;
+    }
+    return 0;
+}
+
+/* buttons: window keyboard plus NDOGS_KEYS (0 = pressed) */
+u32 input_keys(void)
+{
+    int m;
+    u32 k = window_keys();
+    if (script_find("NDOGS_KEYS", 1, &m))
+        k &= ~(u32)m;
+    return k;
+}
+
 void video_frame(void)
 {
-    static int frame;
     u32 powcnt;
-    int x, y;
+    int x, y, xy[2], scripted = 0;
     if (!opened) {
         opened = 1;
         if (!getenv("NDOGS_HEADLESS"))
@@ -141,7 +179,9 @@ void video_frame(void)
     /* stylus: the ARM7 leaves the latest touch sample at 0x027fffaa (x, y as 12-bit ADC values, touch bit 24,
      * validity bits 25-26 = 0). The ADC values are screen coordinates scaled by 16; the calibration written at
      * startup (see video_init) maps them back. */
-    if (window_touch(&x, &y)) {
+    if (!window_touch(&x, &y) && script_find("NDOGS_TOUCH", 2, xy))
+        x = xy[0], y = xy[1], scripted = 1;
+    if (window_touch(&x, &y) || scripted) {
         u32 v = (u32)(x * 16 + 8) | (u32)(y * 16 + 8) << 12 | 1u << 24;
         *(volatile u16 *)0x027fffaau = (u16)v;
         *(volatile u16 *)0x027fffacu = (u16)(v >> 16);
@@ -151,7 +191,7 @@ void video_frame(void)
         *(volatile u16 *)0x027fffa8u |= 0x40;
     }
     {
-        u32 k = window_keys();
+        u32 k = input_keys();
         /* X and Y come from the ARM7's EXTKEYIN copy at 0x027fffa8 (bits 0-1) */
         *(volatile u16 *)0x027fffa8u = (u16)((*(volatile u16 *)0x027fffa8u & ~3u) | ((k >> 10) & 3));
     }
