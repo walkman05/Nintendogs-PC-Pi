@@ -40,7 +40,11 @@ void func_ov004_0216c504(u8 *param_1)
     s64 lVar2;
     s64 lVar3;
     s32 iVar5;
+#ifdef NDOGS_PC /* holds FX_Atan2Idx's 0..0xffff unchanged, as the DS register does */
+    s32 sVar7;
+#else
     s16 sVar7;
+#endif
     s32 iVar10;
     s32 t26c;
     s64 w64;

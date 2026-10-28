@@ -97,6 +97,10 @@ def capture_wrappers(names):
          '    { /* the caller frames on the host stack (structures passed by pointer live there) */',
          '        u32 win[2]; win[0] = (u32)a; win[1] = 0x2000;',
          '        fwrite(win, 4, 2, cap_file); fwrite((void *)win[0], 1, win[1], cap_file); }',
+         '    { /* the hardware registers as the game sees them (POWCNT, timers, ...) */',
+         '        extern void hw_io_snapshot(unsigned char *io); static unsigned char io[0x2000]; u32 win[2];',
+         '        hw_io_snapshot(io); win[0] = 0x04000000u; win[1] = 0x2000;',
+         '        fwrite(win, 4, 2, cap_file); fwrite(io, 1, 0x2000, cap_file); }',
          '    if (after) { fclose(cap_file); cap_file = 0; fprintf(stderr, "captured %s call %d%c", name, n, 10); }',
          '}']
     for n in names:

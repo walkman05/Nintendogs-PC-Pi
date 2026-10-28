@@ -129,6 +129,14 @@ Differential testing against the original ARM code (Unicorn: `pip install unicor
   caller's prototype decides. `port/tools/retscan.py` lists definitions vs mismatching caller declarations and
   `port/tools/retfix.py` gives those callers the definition's type under #ifdef NDOGS_PC (201 declarations in 185
   files, e.g. FX_Atan2Idx (func_02068078) declared s16 made half of all directions negative and broke turning).
+  Same cause one step further: a caller that stores such a result in a narrow local keeps the callee's value on
+  the DS (the register isn't re-extended), so those locals are widened under NDOGS_PC (the 11 s16 locals that
+  receive FX_Atan2Idx: dog chase velocity, other-dog loop, turning helpers). Other mismatched functions' narrow
+  receivers have not been reviewed yet.
+- Captures include the I/O register page (e.g. POWCNT, which the game reads for the screen swap) as replay input;
+  capdiff aligns traces (ARM traces also show recursion and helpers the host calls directly) and resumes at the
+  ARM original when execution lands on an unaligned host function. In the whistle/jump-at-camera scenario all 37
+  runnable replays of the dog update match (one differs only in the OS tick counter).
 
 Porting hazard: pass-through register arguments. A function that forwards r1-r3 untouched to a callee was
 sometimes decompiled with too few parameters (matching on the DS, garbage on the PC). func_0208f7d0 dropped the

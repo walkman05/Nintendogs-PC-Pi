@@ -19,7 +19,11 @@ typedef struct { u32 a, b, c; } Vec3;
 s32 func_0200ccd4(u8 *param_1)
 {
     s32 local_18[3];
+#ifdef NDOGS_PC /* holds FX_Atan2Idx's 0..0xffff unchanged, as the DS register does */
+    s32 sVar2;
+#else
     s16 sVar2;
+#endif
     s32 iVar3;
 
     if (*(u16 *)data_0215942c == 9) {

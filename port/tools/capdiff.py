@@ -28,10 +28,11 @@ def load(path):
         for base, s in REGIONS:
             mem[base] = d[off:off + s]
             off += s
-        wbase, wsize = struct.unpack('<2I', d[off:off + 8])
-        off += 8
-        mem[wbase] = d[off:off + wsize]
-        off += wsize
+        while off + 8 <= len(d) and struct.unpack('<I', d[off:off + 4])[0] != 0x50414344:  # extra windows
+            wbase, wsize = struct.unpack('<2I', d[off:off + 8])
+            off += 8
+            mem[wbase] = d[off:off + wsize]
+            off += wsize
         out.append((hdr, mem))
     return out
 
@@ -40,7 +41,7 @@ def host_functions(mapfile):
     """host address -> ARM address of every func_ symbol in the linker map"""
     out = {}
     for l in open(mapfile, errors='replace'):
-        m = re.match(r'\s+0x([0-9a-f]+)\s+_?func_(?:ov\d+_)?([0-9a-f]{8})\s*$', l)
+        m = re.match(r'\s+0x([0-9a-f]+)\s+_?(?:__wrap_)?func_(?:ov\d+_)?([0-9a-f]{8})\s*$', l)
         if m:
             out[int(m.group(1), 16)] = int(m.group(2), 16)
     return out
@@ -87,14 +88,24 @@ def replay(path, arm):
     uc.reg_write(UC_ARM_REG_SP, sp)
     uc.reg_write(UC_ARM_REG_LR, STOP)
     try:
-        uc.emu_start(addr_of(name), STOP, count=50000000)
+        pc = addr_of(name)
+        for _ in range(10000):
+            try:
+                uc.emu_start(pc, STOP, count=50000000)
+                break
+            except Exception:
+                # landed on a host function no ARM jump could be planted at (unaligned): continue at its original
+                pc = uc.reg_read(UC_ARM_REG_PC)
+                if pc not in arm.host_funcs:
+                    raise
+                pc = arm.host_funcs[pc]
         if uc.reg_read(UC_ARM_REG_PC) != STOP:
             return name, 'ARM did not return (pc %08x)' % uc.reg_read(UC_ARM_REG_PC), None
     except Exception as e:
         return name, 'ARM error %s at pc %08x' % (e, uc.reg_read(UC_ARM_REG_PC)), None
     diffs = []
     for base, data in after.items():
-        if base not in before:
+        if base not in before or base == 0x04000000:  # registers: input only (FIFO writes would be noise)
             continue
         arm_mem = bytes(uc.mem_read(base, len(data)))
         for a, n in ranges(arm_mem, data, base):
@@ -126,25 +137,36 @@ def compare_traces(arm, path):
     host = [(h[0],) + tuple(int(x, 16) for x in h[1:5]) + (bytes.fromhex(h[5]),) for h in host]
     arm.obj = load(path)[0][0][4]
     names = sorted(set(h[0] for h in host) | set(n for n in open(os.environ.get('NDOGS_TRACE_NAMES', 'callees.txt')).read().split(',') if n.strip()))
-    names = [n.strip() for n in names if re.match(r'func_[0-9a-f]{8}$', n.strip())]
+    names = [n.strip() for n in names if re.match(r'func_(?:ov\d+_)?[0-9a-f]{8}$', n.strip())]
+    # FX_Div / FX_Inv inner routines: the host's guarded versions compute directly instead of calling them
+    names = [n for n in names if n not in ('func_02067898', 'func_0206787c')]
+    host = [h for h in host if h[0] not in ('func_02067898', 'func_0206787c')]
     arm_calls, _ = arm_trace(arm, path, names)
     top = re.match(r'cap_(func_\w+?)_\d+\.bin$', os.path.basename(path)).group(1)
     if arm_calls and arm_calls[0][0] == top:
         arm_calls = arm_calls[1:]  # the captured routine's own entry
     print('%s: host %d calls, arm %d calls' % (os.path.basename(path), len(host), len(arm_calls)))
-    for i in range(max(len(host), len(arm_calls))):
-        h = host[i] if i < len(host) else None
-        a = arm_calls[i] if i < len(arm_calls) else None
-        same = h and a and h[0] == a[0]
-        fmt = lambda c: '%s(%s)' % (c[0], ' '.join('%08x' % x for x in c[1:5])) if c else '-'
-        print('  %s %-62s %s' % ('  ' if same else '!!', fmt(a), fmt(h)))
-        if not same:
-            break
-        if a[5] != h[5]:  # the object differs on entry to this call: the bug is between this and the previous call
-            offs = [k for k in range(0xa00) if a[5][k] != h[5][k]]
-            print('     object differs here, first at +0x%x: %s' % (offs[0], ' '.join(
-                '+%x:%02x/%02x' % (k, a[5][k], h[5][k]) for k in offs[:16])))
-            break
+    # align: the ARM trace may hold extra calls (recursion and helpers that the host routines make directly, which
+    # the linker wrappers can't see); each host call is matched with the next ARM call of the same name
+    fmt = lambda c: '%s(%s)' % (c[0], ' '.join('%08x' % x for x in c[1:5])) if c else '-'
+    j = 0
+    for i, h in enumerate(host):
+        k = j
+        while k < len(arm_calls) and k < j + 40 and arm_calls[k][0] != h[0]:
+            k += 1
+        if k >= len(arm_calls) or arm_calls[k][0] != h[0]:
+            print('  !! host call %d %s has no ARM counterpart (ARM next: %s)' % (i, fmt(h), fmt(arm_calls[j] if j < len(arm_calls) else None)))
+            return
+        a = arm_calls[k]
+        if a[5] != h[5]:
+            offs = [x for x in range(0xa00) if a[5][x] != h[5][x]]
+            print('  object differs at host call %d %s (ARM call %d): %s' % (i, fmt(h), k, ' '.join(
+                '+%x:%02x/%02x' % (x, a[5][x], h[5][x]) for x in offs[:24])))
+            if i:
+                print('     previous call: %s' % fmt(host[i - 1]))
+            return
+        j = k + 1
+    print('  traces agree; object identical at every call')
 
 
 def main():
@@ -157,6 +179,7 @@ def main():
     # code pointers in game data point at the host's compiled C: plant an ARM jump to the original at each one
     mapfile = os.environ.get('NDOGS_MAP', 'objs_cap/nintendogs_cap.exe.map')
     funcs = host_functions(mapfile)
+    arm.host_funcs = funcs
     lo, hi = min(funcs) & ~0xfff, (max(funcs) + 0x1fff) & ~0xfff
     arm.uc.mem_map(lo, hi - lo, UC_PROT_ALL)
     prev = -16

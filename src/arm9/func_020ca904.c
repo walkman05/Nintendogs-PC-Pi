@@ -41,7 +41,11 @@ void func_020ca904(s32 *p, s32 *src, s32 p3)
     s32 half;
     s32 q;
     s32 iVar5;
+#ifdef NDOGS_PC /* holds FX_Atan2Idx's 0..0xffff unchanged, as the DS register does */
+    s32 sv;
+#else
     s16 sv;
+#endif
     s32 v7;
 
     *(V3 *)p = *(V3 *)src;

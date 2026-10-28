@@ -48,7 +48,11 @@ void func_020e30f8(s32 param_1)
 {
     u32 uVar1;
     s64 lVar2;
+#ifdef NDOGS_PC /* holds FX_Atan2Idx's 0..0xffff unchanged, as the DS register does */
+    s32 sVar3;
+#else
     s16 sVar3;
+#endif
     s32 iVar12;
     s32 iVar11;
     u32 uVar10;

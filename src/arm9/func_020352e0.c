@@ -17,7 +17,11 @@ void func_020352e0(u8 *param_1)
     T12 loc;
     s32 iVar3;
     s32 k;
+#ifdef NDOGS_PC /* holds FX_Atan2Idx's 0..0xffff unchanged, as the DS register does */
+    s32 sVar2;
+#else
     s16 sVar2;
+#endif
     s32 f;
 
     loc = *(T12 *)(*(u8 **)(*(u8 **)&data_02159444 + 0x1c) + 72);

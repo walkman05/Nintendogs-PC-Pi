@@ -79,7 +79,11 @@ void func_02038b10(u8 *param_1, u32 *param_2, u32 *param_3, u32 *param_4, s32 pa
     }
     if (((u32)param_8 & 0x76) != 0) {
         u32 kx;
+#ifdef NDOGS_PC /* holds FX_Atan2Idx's 0..0xffff unchanged, as the DS register does */
+        s32 sv;
+#else
         s16 sv;
+#endif
         sv = func_02068078(param_5, param_6);
         iv6 = func_0206782c(param_7);
         kx = (sv >> 4) * 2;

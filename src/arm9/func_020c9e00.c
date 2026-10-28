@@ -23,7 +23,11 @@ s16 func_02068078(s32 a, s32 b);
 void func_020c9e00(s32 *param_1, s32 *param_2, u32 param_3, s32 param_4)
 {
     s64 lVar1;
+#ifdef NDOGS_PC /* holds FX_Atan2Idx's 0..0xffff unchanged, as the DS register does */
+    s32 sVar2;
+#else
     s16 sVar2;
+#endif
     u32 uVar3;
     s32 iVar4;
     s32 iVar5;

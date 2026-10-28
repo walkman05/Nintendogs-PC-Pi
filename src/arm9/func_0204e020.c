@@ -43,7 +43,11 @@ void func_0204e020(u8 *p1, s32 p2, s32 p3, s32 p4, s32 p5)
     s32 k9;
     s32 t;
     int idx;
+#ifdef NDOGS_PC /* holds FX_Atan2Idx's 0..0xffff unchanged, as the DS register does */
+    s32 sVar4;
+#else
     s16 sVar4;
+#endif
     s32 q268;
     s32 uVar6;
     s32 uVar9;

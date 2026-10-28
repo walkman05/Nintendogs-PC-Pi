@@ -28,7 +28,11 @@ void func_020ca7c8(s32 *param_1, s32 *param_2, u32 param_3, s32 param_4)
   s32 local_24[3];
   s32 iVar3;
   u32 iVar4;
+#ifdef NDOGS_PC /* holds FX_Atan2Idx's 0..0xffff unchanged, as the DS register does */
+  s32 sVar2;
+#else
   s16 sVar2;
+#endif
   *(T12 *)param_1 = *(T12 *)param_2;
   local_30[0] = -param_1[0];
   local_30[1] = 0;
