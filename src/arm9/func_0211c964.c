@@ -44,8 +44,13 @@ void func_0211c964(void)
     func_020fc76c(0x29, data_0214d0fc, data_0214d118, data_0214d134, data_0214d138);
     *(u32 *)(data_0215be48 + 0xc838) = 5;
     *(u32 *)(data_0215be48 + 0xc83c) = 1;
-    func_021127b8(2, 0, 1);
-    func_021127b8(2, 2, 1);
+#ifdef NDOGS_PC
+    if (!ndogs_full) /* full-game mode: Buy works (func_0211c69c), so don't grey it out */
+#endif
+    {
+        func_021127b8(2, 0, 1);
+        func_021127b8(2, 2, 1);
+    }
     func_02112798(2, 0, 0);
     func_02112798(2, 2, 0);
     func_02112798(2, 1, 0);

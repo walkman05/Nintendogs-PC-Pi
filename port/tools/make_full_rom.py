@@ -71,15 +71,16 @@ def bmg_messages(d):
     dat = d[do + 8:do + dsz]
     mo, _ = secs[b'MID1']
     ids = struct.unpack_from('<%dI' % n, d, mo + 16)
-    offs = [struct.unpack_from('<I', d, io + 16 + i * esz)[0] for i in range(n)]
-    ends = sorted(set(offs + [len(dat)]))
     out = {}
-    for i, off in enumerate(offs):
-        e = ends[ends.index(off) + 1]
-        s = dat[off:e]
-        while len(s) >= 2 and s[-2:] == b'\0\0':  # drop the terminator and padding
-            s = s[:-2]
-        out[ids[i]] = s
+    for i in range(n):
+        off = e = struct.unpack_from('<I', d, io + 16 + i * esz)[0]
+        while e + 2 <= len(dat):
+            c = struct.unpack_from('<H', dat, e)[0]
+            if c == 0:
+                break
+            # control code: 0x1a, then a byte with the code's whole size (it may contain zero halfwords)
+            e += max(dat[e + 2], 4) if c == 0x1a else 2
+        out[ids[i]] = dat[off:e]
     return out
 
 
