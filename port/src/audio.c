@@ -33,6 +33,8 @@ static void wav_header(void)
     fflush(wav);
 }
 
+unsigned audio_underruns, audio_drops;  /* counted by the Windows output (NDOGS_STATUS reports them) */
+
 #ifdef _WIN32
 #include <windows.h>
 #include <mmsystem.h>
@@ -45,7 +47,6 @@ static struct {
     MMRESULT (WINAPI *Write)(HWAVEOUT, LPWAVEHDR, UINT);
 } A;
 static HWAVEOUT dev;
-unsigned audio_underruns, audio_drops;
 static WAVEHDR hdr[NBUF];
 static s16 bufs[NBUF][BUF_FRAMES * 2];
 

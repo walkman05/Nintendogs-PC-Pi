@@ -60,6 +60,17 @@ def windows_target(cc):
     return 'mingw' in r.stdout or 'cygwin' in r.stdout
 
 
+def arm_target(cc):
+    """32-bit ARM Linux (Raspberry Pi: arm-linux-gnueabihf-gcc)"""
+    r = subprocess.run([cc, '-dumpmachine'], capture_output=True, text=True)
+    return r.stdout.startswith('arm')
+
+
+# x86: -m32. ARM: ARM (not Thumb) code, which the register trap and frame-pointer backtraces expect, and signed
+# char as on the DS (mwcc -char signed; ARM gcc's default is unsigned)
+ARCH = ['-m32']
+
+
 def capture_wrappers(names):
     """C for --wrap wrappers: NDOGS_CAPTURE=<name>@<call>[,...] dumps DS memory and the arguments before and after
     that call of that routine to cap_<name>_<call>.bin (read by port/tools/capdiff.py)"""
@@ -167,11 +178,13 @@ def link(cc, objs, out):
     stub = os.path.join(OBJDIR, 'veneers.S')
     with open(os.path.join(ROOT, 'port', 'link', 'veneers.txt')) as v, open(stub, 'w') as f:
         f.write('.text\n')
+        if not win:  # no executable stack wanted
+            f.write('.section .note.GNU-stack,"",%progbits\n.text\n')
         for line in v:
             if '=' in line and not line.startswith('#'):
                 a, b = [x.strip() for x in line.split('=')]
-                f.write('.globl %s%s\n%s%s:\n    jmp %s%s\n' % (us, a, us, a, us, b))
-    subprocess.run([cc, '-m32', '-c', stub, '-o', stub[:-2] + '.o'], check=True)
+                f.write('.globl %s%s\n%s%s:\n    %s %s%s\n' % (us, a, us, a, 'b' if ARCH != ['-m32'] else 'jmp', us, b))
+    subprocess.run([cc] + ARCH + ['-c', stub, '-o', stub[:-2] + '.o'], check=True)
     objs = list(objs) + [stub[:-2] + '.o']
     wrap = os.environ.get('NDOGS_WRAP', '')
     if wrap.startswith('@'):  # a file with the list (thousands of names don't fit in an environment variable)
@@ -186,7 +199,7 @@ def link(cc, objs, out):
     with open(rsp, 'w') as f:
         f.write('\n'.join([o.replace('\\', '/') for o in objs] + ['-Wl,--wrap=' + w for w in wrap]))
     # fixed load address (no ASLR): keeps the program clear of the DS address range and makes the map usable
-    flags = ['-m32', '-Wl,-Map=' + out + '.map'] + (['-Wl,--disable-dynamicbase', '-Wl,--image-base=0x10000000'] if win else ['-no-pie', '-Wl,-Ttext-segment=0x10000000'])
+    flags = ARCH + ['-Wl,-Map=' + out + '.map'] + (['-Wl,--disable-dynamicbase', '-Wl,--image-base=0x10000000'] if win else ['-no-pie', '-Wl,-Ttext-segment=0x10000000'])
     libs = [] if win else ['-ldl', '-lpthread']  # dlopen (ALSA, X11), worker threads
     r = subprocess.run([cc] + flags + ['@' + rsp, script, '-o', out] + libs,
                        capture_output=True, text=True)
@@ -215,6 +228,10 @@ def main():
     args = ap.parse_args()
     global TARGET, SFX
     TARGET, SFX = args.target, '' if args.target == 'demo' else '_retail'
+    global ARCH
+    if arm_target(args.cc):
+        ARCH = ['-marm', '-fsigned-char']
+        FLAGS[FLAGS.index('-m32'):FLAGS.index('-m32') + 1] = ARCH
     if args.link:
         OBJDIR = os.path.abspath(args.link)
         os.makedirs(OBJDIR, exist_ok=True)

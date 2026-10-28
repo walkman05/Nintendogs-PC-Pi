@@ -57,10 +57,26 @@ static LONG WINAPI on_fault(EXCEPTION_POINTERS *e)
     return EXCEPTION_EXECUTE_HANDLER;
 }
 #else
-static void on_fault(int sig, siginfo_t *si, void *uc)
+#include <ucontext.h>
+static void on_fault(int sig, siginfo_t *si, void *ucv)
 {
-    (void)uc;
-    fprintf(stderr, "\nsignal %d, address %p, during %s\n", sig, si->si_addr, stage);
+    ucontext_t *uc = ucv;
+#ifdef __arm__
+    unsigned int pc = uc->uc_mcontext.arm_pc, *fp = (unsigned int *)uc->uc_mcontext.arm_fp;
+#else
+    unsigned int pc = uc->uc_mcontext.gregs[REG_EIP], *fp = (unsigned int *)uc->uc_mcontext.gregs[REG_EBP];
+#endif
+    int i;
+    fprintf(stderr, "\nsignal %d at pc=0x%08x, address %p, during %s\n", sig, pc, si->si_addr, stage);
+    for (i = 0; i < 24 && fp && (size_t)fp > 0x10000; i++) {  /* match return addresses against the .map */
+#ifdef __arm__
+        fprintf(stderr, "  frame %2d return 0x%08x\n", i, fp[0]);
+        fp = (unsigned int *)fp[-1];
+#else
+        fprintf(stderr, "  frame %2d return 0x%08x\n", i, fp[1]);
+        fp = (unsigned int *)fp[0];
+#endif
+    }
     fflush(stderr);
     _exit(128 + sig);
 }
@@ -104,17 +120,29 @@ static void start_watchdog(int secs)
 #else
 #include <ucontext.h>
 #include <unistd.h>
+#ifdef __arm__
+/* gcc's ARM frames (-marm, frame pointer): fp points at the saved lr, the caller's fp is just below it */
+#define UC_PC(uc) ((uc)->uc_mcontext.arm_pc)
+#define UC_FP(uc) ((uc)->uc_mcontext.arm_fp)
+#define FRAME_RET(fp) ((fp)[0])
+#define FRAME_NEXT(fp) ((unsigned int *)(fp)[-1])
+#else
+#define UC_PC(uc) ((uc)->uc_mcontext.gregs[REG_EIP])
+#define UC_FP(uc) ((uc)->uc_mcontext.gregs[REG_EBP])
+#define FRAME_RET(fp) ((fp)[1])
+#define FRAME_NEXT(fp) ((unsigned int *)(fp)[0])
+#endif
 static void on_alarm(int sig, siginfo_t *si, void *ucv)
 {
     ucontext_t *uc = ucv;
-    unsigned int *fp = (unsigned int *)uc->uc_mcontext.gregs[REG_EBP];
+    unsigned int *fp = (unsigned int *)UC_FP(uc);
     int i;
     (void)sig;
     (void)si;
-    fprintf(stderr, "\nwatchdog: main thread in %s, eip=0x%08x\n", stage, (unsigned int)uc->uc_mcontext.gregs[REG_EIP]);
+    fprintf(stderr, "\nwatchdog: main thread in %s, pc=0x%08x\n", stage, (unsigned int)UC_PC(uc));
     for (i = 0; i < 24 && fp; i++) {
-        fprintf(stderr, "  frame %2d return 0x%08x\n", i, fp[1]);
-        fp = (unsigned int *)fp[0];
+        fprintf(stderr, "  frame %2d return 0x%08x\n", i, FRAME_RET(fp));
+        fp = FRAME_NEXT(fp);
     }
     _exit(3);
 }

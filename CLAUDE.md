@@ -265,6 +265,24 @@ only worked because the stack slot happened to hold it.
 Next: decompile the changed / retail-only functions (the save code among them); drop the demo gates in a retail
 build.
 
+## Raspberry Pi (32-bit ARM Linux)
+Cross-built on Windows with Arm GNU Toolchain 12.2.rel1 (mingw-w64-i686 host, arm-none-linux-gnueabihf; glibc 2.36,
+as Raspberry Pi OS Bookworm; kept in H:/nintendogs/tools/armgcc, outside the repo):
+`python port/tools/host_compile.py --cc arm-none-linux-gnueabihf-gcc --link <objdir> --exe nintendogs_pc --target retail`.
+An ARM compiler gets `-marm -fsigned-char` instead of `-m32` (ARM code for the register trap and frame-pointer
+backtraces; char signed as on the DS) and ARM branches in the veneers. 32-bit is required (the game assumes 32-bit
+pointers): 64-bit Pi OS needs armhf multiarch libraries, and a Pi 5 on its default 16 KB-page kernel can't run it.
+- Register trap (hw_trap.c, `__arm__`): no user single-step on ARM, so on the fault the page is opened and the
+  instruction after the faulting one (ARM or Thumb; 16/32-bit Thumb by the first halfword) is replaced by UDF;
+  the access re-runs natively, SIGILL at the UDF restores it, finishes the write and closes the page. Code pages
+  are made writable on demand. The write bit comes from the fault status (error_code bit 11).
+- main.c's Linux crash/watchdog backtraces walk ARM frames (fp -> saved lr, fp[-1] -> caller's fp).
+- mic.c: ALSA capture (dlopen, non-blocking, mono S16 at the game's rate).
+- audio.c: audio_underruns/drops were defined only in the Windows branch (any Linux link failed).
+Status: compiles and links (8,311 files) to an ELF32 hard-float binary needing only libc.so.6 (GLIBC_2.34);
+not run yet (no ARM machine or emulator here; Docker Desktop doesn't start on this PC: AF_UNIX socket files
+become inaccessible).
+
 ## Build
 ```
 cmake -S . -B build -A Win32                 # Windows (Visual Studio)

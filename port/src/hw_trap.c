@@ -218,6 +218,118 @@ int hw_trap_install(void)
             protect(p, 0);
     return 0;
 }
+#elif defined(__arm__)
+/* 32-bit ARM Linux (Raspberry Pi): no single-step flag for user programs. Instead the instruction after the
+ * faulting one is replaced by an undefined instruction while the page is open; the access re-runs natively (any
+ * load/store form, ARM or Thumb) and the undefined instruction brings us back to finish and restore it. */
+#include <unistd.h>
+static void protect(u32 page, int open)
+{
+    mprotect((void *)page, 0x1000, open ? PROT_READ | PROT_WRITE : PROT_NONE);
+}
+
+static struct {
+    u32 at;        /* where the undefined instruction is */
+    u32 saved;     /* what it replaced */
+    int thumb;
+} stop;
+
+static void code_writable(u32 addr, int n)
+{
+    long pg = sysconf(_SC_PAGESIZE);
+    u32 lo = addr & ~(u32)(pg - 1), hi = (addr + n + pg - 1) & ~(u32)(pg - 1);
+    mprotect((void *)lo, hi - lo, PROT_READ | PROT_WRITE | PROT_EXEC);
+}
+
+static void on_segv(int sig, siginfo_t *si, void *ucv)
+{
+    ucontext_t *uc = ucv;
+    u32 addr = (u32)(size_t)si->si_addr, pc = uc->uc_mcontext.arm_pc, next;
+    int thumb = (uc->uc_mcontext.arm_cpsr & 0x20) != 0;
+    (void)sig;
+    if (!trapped(addr) || pending.active) {
+        signal(SIGSEGV, SIG_DFL);
+        return;
+    }
+    pending.active = 1;
+    hw_trap_count++;
+    if (addr - 0x04000400u < 0x200u)
+        hw_trap_gx++;
+    pending.addr = addr;
+    pending.page = page_of(addr);
+    /* ARM: bit 11 of the fault status (WnR) says write */
+    pending.write = (uc->uc_mcontext.error_code & (1u << 11)) != 0;
+    protect(pending.page, 1);
+    hw_io_prepare_read(addr);
+    if (pending.write)
+        hw_io_before_write(addr);
+    if (trap_prof)
+        prof_hit(pc);
+    if (thumb) {
+        u16 h = *(u16 *)pc;
+        next = pc + ((h >> 11) >= 0x1d ? 4 : 2);  /* 32-bit Thumb-2 instructions start with 0b11101/11110/11111 */
+        code_writable(next, 2);
+        stop.saved = *(u16 *)next;
+        *(u16 *)next = 0xde00;                     /* UDF #0 (Thumb) */
+        __builtin___clear_cache((char *)next, (char *)next + 2);
+    } else {
+        next = pc + 4;
+        code_writable(next, 4);
+        stop.saved = *(u32 *)next;
+        *(u32 *)next = 0xe7f000f0;                 /* UDF #0 (ARM) */
+        __builtin___clear_cache((char *)next, (char *)next + 4);
+    }
+    stop.at = next;
+    stop.thumb = thumb;
+}
+
+static void on_ill(int sig, siginfo_t *si, void *ucv)
+{
+    ucontext_t *uc = ucv;
+    (void)sig;
+    (void)si;
+    if (!pending.active || uc->uc_mcontext.arm_pc != stop.at) {
+        signal(SIGILL, SIG_DFL);
+        return;
+    }
+    if (stop.thumb)
+        *(u16 *)stop.at = (u16)stop.saved;
+    else
+        *(u32 *)stop.at = stop.saved;
+    __builtin___clear_cache((char *)stop.at, (char *)stop.at + 4);
+    pending.active = 0;
+    if (pending.write) {
+        if ((pending.addr & ~3u) == 0x04000214)
+            hw_io_after_if_write();
+        hw_io_written(pending.addr);
+    }
+    if (hw_iolog)
+        fprintf(stderr, "io %s 0x%08x = 0x%08x\n", pending.write ? "W" : "R", pending.addr,
+                *(volatile u32 *)(pending.addr & ~3u));
+    protect(pending.page, 0);
+    if (pending.write) {
+        in_exception = 1;
+        hw_irq_poll();
+        in_exception = 0;
+    }
+}
+
+int hw_trap_install(void)
+{
+    struct sigaction sa;
+    unsigned i;
+    u32 p;
+    memset(&sa, 0, sizeof sa);
+    sa.sa_sigaction = on_segv;
+    sa.sa_flags = SA_SIGINFO | SA_NODEFER;
+    sigaction(SIGSEGV, &sa, 0);
+    sa.sa_sigaction = on_ill;
+    sigaction(SIGILL, &sa, 0);
+    for (i = 0; i < sizeof ranges / sizeof ranges[0]; i++)
+        for (p = ranges[i].base; p < ranges[i].base + ranges[i].size; p += 0x1000)
+            protect(p, 0);
+    return 0;
+}
 #else
 static void protect(u32 page, int open)
 {

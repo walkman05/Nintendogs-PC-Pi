@@ -117,9 +117,60 @@ static void dev_poll(void)
         }
 }
 #else
-static void dev_open(int rate) { (void)rate; }
-static void dev_close(void) {}
-static void dev_poll(void) {}
+/* ALSA capture through dlopen (no build dependency; silence if libasound or a capture device is missing) */
+#include <dlfcn.h>
+static void *cap;
+static struct {
+    int (*open)(void **, const char *, int, int);
+    int (*set_params)(void *, int, int, unsigned, unsigned, int, unsigned);
+    long (*readi)(void *, void *, unsigned long);
+    int (*prepare)(void *);
+    int (*close)(void *);
+} A;
+
+static void dev_close(void)
+{
+    if (cap)
+        A.close(cap);
+    cap = 0;
+}
+
+static void dev_open(int rate)
+{
+    static void *lib;
+    dev_close();
+    if (!lib && !(lib = dlopen("libasound.so.2", RTLD_NOW)))
+        return;
+    A.open = (int (*)(void **, const char *, int, int))dlsym(lib, "snd_pcm_open");
+    A.set_params = (int (*)(void *, int, int, unsigned, unsigned, int, unsigned))dlsym(lib, "snd_pcm_set_params");
+    A.readi = (long (*)(void *, void *, unsigned long))dlsym(lib, "snd_pcm_readi");
+    A.prepare = (int (*)(void *))dlsym(lib, "snd_pcm_prepare");
+    A.close = (int (*)(void *))dlsym(lib, "snd_pcm_close");
+    if (!A.open || !A.set_params || !A.readi || !A.prepare || !A.close)
+        return;
+    /* capture (1), non-blocking (1); S16_LE (2), interleaved (3), mono, 100 ms latency */
+    if (A.open(&cap, "default", 1, 1) < 0) {
+        fprintf(stderr, "mic: no recording device\n");
+        cap = 0;
+        return;
+    }
+    if (A.set_params(cap, 2, 3, 1, (unsigned)rate, 1, 100000) < 0) {
+        fprintf(stderr, "mic: the recording device can't do %d Hz mono\n", rate);
+        dev_close();
+    }
+}
+
+static void dev_poll(void)
+{
+    s16 buf[512];
+    long n;
+    if (!cap)
+        return;
+    while ((n = A.readi(cap, buf, 512)) > 0)
+        fifo_put(buf, (unsigned)n);
+    if (n < 0 && n != -11)  /* -EAGAIN: nothing yet; anything else (overrun): recover */
+        A.prepare(cap);
+}
 #endif
 
 static void wav_load(void)
