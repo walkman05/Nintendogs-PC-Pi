@@ -42,6 +42,25 @@ void func_0208b604(u8 *p1, u32 p2, u32 p3, u32 *p4)
     p4[1] = 0;
     p4[2] = 0;
     r6 = func_0208c720(p1, ptr, b2);
+#ifdef NDOGS_PC
+    /* full-game mode: the demo ROM has no icons for Boxer, Dalmatian, Husky and Golden variant c (the shops never
+     * offered them); borrow a similar breed's icon instead of failing */
+    if (r6 == 0 && ndogs_full) {
+        static const char *const subst[][2] = { { "Hsk", "Sib" }, { "Dal", "Jrt" }, { "Box", "Pug" }, { "Gld", "Gld" } };
+        int k;
+        for (k = 0; k < 4 && r6 == 0; k++) {
+            if (b1[0] == subst[k][0][0] && b1[1] == subst[k][0][1] && b1[2] == subst[k][0][2]) {
+                b1[0] = subst[k][1][0];
+                b1[1] = subst[k][1][1];
+                b1[2] = subst[k][1][2];
+                if (k == 3)
+                    b1[4] = 'b';
+                func_0205f050(pb2, 64, data_0213eac8, (u32)b1);
+                r6 = func_0208c720(p1, ptr, b2);
+            }
+        }
+    }
+#endif
     func_0205f050(b2, 64, data_0213eadc, (u32)ptr, (u32)b1);
     p4[0] = func_0207df48(b2);
     func_0205f050(b2, 64, data_0213eae8, (u32)ptr, (u32)b1);

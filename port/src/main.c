@@ -21,6 +21,7 @@ extern void func_01ffdc94(void);
 extern void ndogs_game_main(void);
 
 static const char *stage = "start";
+int ndogs_full = 1;  /* full-game mode (see host_compat.h); --demo keeps the kiosk demo's restrictions */
 
 #ifdef _WIN32
 static LONG WINAPI on_fault(EXCEPTION_POINTERS *e)
@@ -213,6 +214,8 @@ int main(int argc, char **argv)
     for (i = 1; i < argc; i++)
         if (!strcmp(argv[i], "--data") && i + 1 < argc)
             dir = argv[++i];
+        else if (!strcmp(argv[i], "--demo"))
+            ndogs_full = 0;
     if (!dir)
         dir = find_data_dir();
     setvbuf(stdout, 0, _IONBF, 0);

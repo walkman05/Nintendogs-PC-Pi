@@ -283,6 +283,15 @@ void video_frame(void)
                 p++;
         }
     }
+    /* NDOGS_PTRWATCH=<addr>: log each change of the u16 that the game pointer at <addr> points to (e.g. 0215942c,
+     * the game mode) */
+    if (getenv("NDOGS_PTRWATCH")) {
+        static u32 last_v = 0xffffffffu;
+        u32 p = *(u32 *)strtoul(getenv("NDOGS_PTRWATCH"), 0, 16), v = p ? *(u16 *)p : 0xffff0000u;
+        if (v != last_v)
+            fprintf(stderr, "ptrwatch %d: %08x -> %x\n", frame, p, v);
+        last_v = v;
+    }
     if (S > 1) {
         top = powcnt & 0x8000 ? hi_a : hi_b;
         bottom = powcnt & 0x8000 ? hi_b : hi_a;

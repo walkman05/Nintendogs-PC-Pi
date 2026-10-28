@@ -18,6 +18,9 @@ static inline unsigned long long HostIoRead64(unsigned int addr)
     unsigned int lo = HostIoRead32(addr);
     return lo | (unsigned long long)HostIoRead32(addr + 4) << 32;
 }
+/* Full-game mode (port/src/main.c; default on, --demo turns it off): demo-only restrictions in the game code are
+ * lifted behind `if (ndogs_full)`. */
+extern int ndogs_full;
 static inline void HostIoWrite64(unsigned int addr, unsigned long long value)
 {
     HostIoWrite32(addr, (unsigned int)value);

@@ -48,6 +48,20 @@ void func_0211c69c(u8 *param_1)
     if ((*(u16 *)(2 + data_0214f004) & 2) == 0) {
       return;
     }
+#ifdef NDOGS_PC
+    /* full-game mode: the demo build dropped the Buy button (0); take the kept path in state 4 (flag 0x10 clear),
+     * which opens the kennel shop */
+    if (iVar4 == 0 && ndogs_full) {
+      *(u16 *)(0x1c18 + param_1) = bVar2;
+      *(u16 *)(param_1 + 0x1c1a) = (u32)bVar1;
+      func_02112798(2, 2, 1);
+      func_02108e24(0);
+      func_020a1a40(0x22);
+      *(s32 *)(0xc + param_1) = 3;
+      *(s32 *)(0x10 + param_1) = 0;
+      return;
+    }
+#endif
     if (iVar4 == 0) {
       return;
     }
