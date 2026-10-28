@@ -24,8 +24,8 @@ def load(path):
     d = open(path, 'rb').read()
     out, off = [], 0
     for k in range(2):
-        hdr = struct.unpack('<12I', d[off:off + 48])
-        off += 48
+        hdr = struct.unpack('<16I', d[off:off + 64])
+        off += 64
         mem = {}
         for base, s in REGIONS:
             mem[base] = d[off:off + s]
@@ -69,6 +69,17 @@ def ranges(a, b, base):
     return out
 
 
+def code_pointers(arm, a, h, off, n):
+    """True if every differing word in a[off:off+n] / h[off:off+n] is a code pointer: the host's compiled C where the
+    ARM has the original (the host stores its own function addresses in game data)"""
+    w0, w1 = off & ~3, (off + n + 3) & ~3
+    for w in range(w0, w1, 4):
+        x, y = struct.unpack('<I', a[w:w + 4])[0], struct.unpack('<I', h[w:w + 4])[0]
+        if x != y and arm.funcs.get(y) != (x & ~1):
+            return False
+    return True
+
+
 def replay(path, arm):
     name = re.match(r'cap_(func_\w+?)_(\d+)\.bin$', os.path.basename(path)).group(1)
     (bh, before), (ah, after) = load(path)
@@ -82,11 +93,11 @@ def replay(path, arm):
             pass  # already mapped
         uc.mem_write(base, data)
     uc.reg_write(UC_ARM_REG_CPSR, 0x1f)
-    args = bh[4:12]
+    args = bh[4:16]
     for i in range(4):
         uc.reg_write(ARGS[i], args[i])
     sp = STACK + 0x8000
-    uc.mem_write(sp, struct.pack('<4I', *args[4:8]))  # arguments 5-8 on the stack
+    uc.mem_write(sp, struct.pack('<8I', *args[4:12]))  # arguments 5-12 on the stack
     uc.reg_write(UC_ARM_REG_SP, sp)
     uc.reg_write(UC_ARM_REG_LR, STOP)
     try:
@@ -110,6 +121,8 @@ def replay(path, arm):
             continue
         arm_mem = bytes(uc.mem_read(base, len(data)))
         for a, n in ranges(arm_mem, data, base):
+            if code_pointers(arm, arm_mem, data, a - base, n):
+                continue
             diffs.append((a, n, arm_mem[a - base:a - base + min(n, 32)], data[a - base:a - base + min(n, 32)]))
     # what the routine wrote at all (host): context for the diffs
     wrote = sum(n for base, data in after.items() if base in before for a, n in ranges(before[base], data, base))
@@ -121,10 +134,13 @@ def replay(path, arm):
 def arm_trace(arm, path, names):
     """replay like replay(), recording calls of the named routines: [(name, r0, r1, r2, r3)]"""
     calls, hooks = [], []
+    # the first argument's object (zeros when it is a number, as the capture build writes it)
+    ok = 0x01ff8000 <= arm.obj <= 0x02400000 - 0xa00
+    obj_bytes = lambda uc: bytes(uc.mem_read(arm.obj, 0xa00)) if ok else bytes(0xa00)
     for n in names:
         addr = addr_of(n)
         hooks.append(arm.uc.hook_add(UC_HOOK_CODE, lambda uc, a, size, nm: calls.append(
-            (nm,) + tuple(uc.reg_read(r) for r in ARGS) + (bytes(uc.mem_read(arm.obj, 0xa00)),)), n, begin=addr, end=addr))
+            (nm,) + tuple(uc.reg_read(r) for r in ARGS) + (obj_bytes(uc),)), n, begin=addr, end=addr))
     result = replay(path, arm)
     for h in hooks:
         arm.uc.hook_del(h)
@@ -179,7 +195,7 @@ def main():
     # code pointers in game data point at the host's compiled C: entering one continues at the original (a code
     # hook over the host range; host addresses need not be word aligned, ARM fetches round them down)
     mapfile = os.environ.get('NDOGS_MAP', 'objs_cap/nintendogs_cap.exe.map')
-    funcs = host_functions(mapfile)
+    funcs = arm.funcs = host_functions(mapfile)
     lo, hi = min(funcs) & ~0xfff, (max(funcs) + 0x1fff) & ~0xfff
     arm.uc.mem_map(lo, hi - lo, UC_PROT_ALL)
 

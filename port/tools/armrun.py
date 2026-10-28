@@ -5,7 +5,7 @@ ARM9 main RAM (arm9.bin at 0x02000000), ITCM (0x01ff8000) and DTCM (0x027e0000) 
 hardware divider and square root (0x04000280-0x040002bc) are modelled, since the runtime uses them. A call puts up
 to four arguments in r0-r3, returns to a stop address in lr, and gives back r0 and r1."""
 import os
-from unicorn import Uc, UC_ARCH_ARM, UC_MODE_ARM, UC_HOOK_MEM_WRITE, UC_PROT_ALL
+from unicorn import Uc, UC_ARCH_ARM, UC_MODE_ARM, UC_HOOK_MEM_WRITE, UC_HOOK_CODE, UC_PROT_ALL
 from unicorn.arm_const import UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3, UC_ARM_REG_SP, \
     UC_ARM_REG_LR, UC_ARM_REG_PC, UC_ARM_REG_CPSR, UC_ARM_REG_C1_C0_2
 
@@ -35,8 +35,85 @@ class Arm:
             uc.mem_write(base, open(os.path.join(ROM, name), 'rb').read())
         uc.mem_write(STOP, b'\xfe\xff\xff\xea')  # b . (never reached: emulation stops at STOP)
         uc.hook_add(UC_HOOK_MEM_WRITE, self._io_write, begin=0x04000280, end=0x040002bf)
+        self._hook_unaligned()
         self.snapshot = uc.context_save()
         self.ram = bytes(uc.mem_read(0x02000000, 0x400000))
+
+    def _hook_unaligned(self):
+        """ARMv5 unaligned word access (Unicorn behaves like ARMv6+ whatever the CPU model): LDR reads the aligned
+        word rotated right by 8 * (address & 3), STR writes the aligned word. Only the SDK string/printf code relies
+        on it (its byte stores go through rotated words), so only functions using a register-amount rotate are
+        hooked, and there each word LDR/STR is checked."""
+        import capstone, glob, re
+        from capstone import arm as csa
+        md = self._cs = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_ARM)
+        md.detail = True
+        starts, rot = {}, set()
+        for line in open(os.path.join(ROOT, 'functions.csv')):
+            f = line.split(',')
+            if len(f) > 3 and f[3].startswith('0x'):
+                starts[f[0]] = int(f[3], 16)
+        for p in glob.glob(os.path.join(ROOT, 'extracted', 'asm_all', '**', '*.s'), recursive=True):
+            cur = None
+            for line in open(p, encoding='utf-8', errors='replace'):
+                m = re.match(r'\s*arm_func_start (\S+)', line)
+                if m:
+                    cur = m.group(1)
+                elif cur and re.search(r', ror (r\d+|ip|lr)\s*$', line):
+                    rot.add(cur)
+        order = sorted(starts.values())
+        for fn in rot:
+            if fn in starts:
+                a = starts[fn]
+                end = next((x for x in order if x > a), a + 0x400)
+                self.uc.hook_add(UC_HOOK_CODE, self._unaligned, None, a, end - 1)
+
+    def _cond(self, cc):
+        from capstone import arm as csa
+        f = self.uc.reg_read(UC_ARM_REG_CPSR) >> 28
+        n, z, c, v = f >> 3 & 1, f >> 2 & 1, f >> 1 & 1, f & 1
+        return {csa.ARM_CC_AL: 1, csa.ARM_CC_INVALID: 1, csa.ARM_CC_EQ: z, csa.ARM_CC_NE: not z, csa.ARM_CC_HS: c,
+                csa.ARM_CC_LO: not c, csa.ARM_CC_MI: n, csa.ARM_CC_PL: not n, csa.ARM_CC_VS: v, csa.ARM_CC_VC: not v,
+                csa.ARM_CC_HI: c and not z, csa.ARM_CC_LS: not c or z, csa.ARM_CC_GE: n == v,
+                csa.ARM_CC_LT: n != v, csa.ARM_CC_GT: not z and n == v, csa.ARM_CC_LE: z or n != v}[cc]
+
+    def _unaligned(self, uc, addr, size, _):
+        from capstone import arm as csa
+        ins = next(self._cs.disasm(bytes(uc.mem_read(addr, 4)), addr), None)
+        if ins is None or ins.id not in (csa.ARM_INS_LDR, csa.ARM_INS_STR) or not self._cond(ins.cc):
+            return
+        reg = lambda r: uc.reg_read(r) if r != csa.ARM_REG_PC else addr + 8
+        ops = ins.operands
+        mem = ops[1].mem
+        base = reg(mem.base)
+        if mem.index:
+            off = reg(mem.index) << (ops[1].shift.value or 0)
+        else:
+            off = mem.disp
+        if len(ops) == 3:  # post-indexed: [rn], #imm / [rn], rm
+            off = ops[2].imm if ops[2].type == csa.ARM_OP_IMM else reg(ops[2].reg)
+            if ops[2].subtracted:
+                off = -off
+            ea, wb = base, base + off
+        else:
+            if ops[1].subtracted:
+                off = -off
+            ea = base + off
+            wb = ea if ins.writeback else None
+        ea &= 0xffffffff
+        if not ea & 3:
+            return
+        rt = ops[0].reg
+        al = ea & ~3
+        if ins.id == csa.ARM_INS_LDR:
+            w = self._r32(al)
+            k = (ea & 3) * 8
+            uc.reg_write(rt, ((w >> k) | (w << (32 - k))) & 0xffffffff)
+        else:
+            self._w32(al, reg(rt))
+        if wb is not None and not (ins.id == csa.ARM_INS_LDR and mem.base == rt):
+            uc.reg_write(mem.base, wb & 0xffffffff)
+        uc.reg_write(UC_ARM_REG_PC, addr + 4)
 
     def _r32(self, a):
         return int.from_bytes(self.uc.mem_read(a, 4), 'little')

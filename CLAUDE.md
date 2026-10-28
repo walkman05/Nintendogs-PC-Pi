@@ -147,8 +147,12 @@ Differential testing against the original ARM code (Unicorn: `pip install unicor
   ARM original when execution enters host code (a code hook over the host range: host function addresses are not
   word aligned, so planted ARM jumps misfired). Bytes written asynchronously meanwhile (OS tick counter, the ARM7
   stand-in's touch/keys at 0x027fffa8) are reported as ignored. Capture wrappers forward 12 arguments (an 8-argument
-  wrapper gave func_01ffd8f8 a garbage 9th one). In the whistle/jump-at-camera scenario all 50 replays of the dog
-  update (calls 2500-14750, every 250th) match.
+  wrapper gave func_01ffd8f8 a garbage 9th one) and record 12; nested captures are skipped; a first argument that is
+  a number (not a DS RAM pointer) is traced as zeros. Host function pointers stored in game data count as equal to
+  the ARM original. armrun.py models ARMv5 unaligned LDR/STR (rotated word / aligned store; Unicorn does ARMv6+
+  whatever the CPU model) in the 23 SDK string/printf functions that rely on it. In the whistle/jump-at-camera
+  scenario all 50 replays of the dog update (calls 2500-14750, every 250th) match, and so do all 221 replays of
+  the 214 routines in the wrapped set (`NDOGS_CAPTURE=<each>@300,<each>@2000`).
 
 Porting hazard: pass-through register arguments. A function that forwards r1-r3 untouched to a callee was
 sometimes decompiled with too few parameters (matching on the DS, garbage on the PC). func_0208f7d0 dropped the
