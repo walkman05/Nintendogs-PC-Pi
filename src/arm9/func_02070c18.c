@@ -2,7 +2,8 @@
 
 extern void func_02070434(u32 v);
 
-void func_02070c18(u32 *p)
+/* the second argument (r1) passes straight through to the callee */
+void func_02070c18(u32 *p, u32 v)
 {
-    func_02070434(*p);
+    ((void (*)(u32, u32))func_02070434)(*p, v);
 }

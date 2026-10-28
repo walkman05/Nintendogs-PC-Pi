@@ -615,15 +615,22 @@ static void vblank_event(void)
     hw_page_open(0x04000004, 0);
 }
 
-/* Frame clock. A VBlank happens when the game halts waiting for an interrupt (its frame is done), no sooner than
- * 1/60 s after the previous one: if the game falls behind, the whole game slows down evenly, the way it would in an
- * emulator, instead of VBlanks landing in the middle of its frame (the game swaps screens and 3D views in step with
- * VBlank and assumes each frame fits in one). If the game doesn't halt for a while, a VBlank is raised anyway. */
+/* Frame clock. A VBlank happens when the game halts waiting for an interrupt (its frame is done), never in the
+ * middle of a frame (the game swaps screens and 3D views in step with VBlank and assumes each frame fits in one).
+ * VBlanks follow a fixed 60 Hz schedule (the game's logic advances once per VBlank, as on the DS, so this is real
+ * speed; each screen shows 30 fps since the game alternates them): a VBlank never comes early, and after a slow
+ * frame the following ones come as soon as the game halts until it is back on schedule. If the game doesn't halt
+ * for a while, a VBlank is raised anyway. */
 #define STALL_MS 100.0
+#define CATCHUP_MS 250.0
 
 static void next_frame(double t)
 {
-    next_vblank = next_vblank + FRAME_MS > t ? next_vblank + FRAME_MS : t + FRAME_MS;  /* behind: don't catch up */
+    /* VBlanks keep to a fixed 60 Hz schedule, so game speed follows the clock: after a slow frame the next ones
+     * start without waiting until the game has caught up. Only a long stall (loading) moves the schedule. */
+    next_vblank += FRAME_MS;
+    if (t - next_vblank > CATCHUP_MS)
+        next_vblank = t + FRAME_MS;
     vblank_event();
 }
 

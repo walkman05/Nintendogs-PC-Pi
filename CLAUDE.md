@@ -80,8 +80,10 @@ drawn yet (milestone 5).
 - `port/src/video.c`: at VBlank the swapped 3D list is rasterised; at "line 0" (after the game's VBlank work) both
   engines are drawn from a register snapshot, display capture is applied (the game shows 3D on both screens by
   swapping screens every frame and capturing), and the frame is presented.
-- Frame pacing (`hw.c`): VBlank comes when the game halts for it, at most 60 Hz. The game must finish each frame
-  within one VBlank (screen swap and 3D swap are in step), so when the port is slow the whole game slows down.
+- Frame pacing (`hw.c`): VBlank comes when the game halts for it (never mid-frame: screen swap and 3D swap are in
+  step), on a fixed 60 Hz schedule. The game logic advances once per VBlank as on the DS, so this is real speed
+  (each screen shows 30 fps, the game alternates them); after a slow frame the next ones run back to back until
+  the schedule is caught up, so game speed follows the clock, not the frame rate.
 - Debugging: `NDOGS_SHOT=<frame,...>` saves shot_<frame>.bmp, `NDOGS_VLOG=1` logs per-frame render times and
   display registers, `NDOGS_WATCH=<reg>` logs who writes a register and when.
 - Optimisation: the renderers build at -O2; game code at -O0 (`NDOGS_OPT`): at -O1 some decompiled C relies on
@@ -100,8 +102,11 @@ Status: 60 fps through the intro, title and the demo's attract scene with the do
 
 Porting hazard: pass-through register arguments. A function that forwards r1-r3 untouched to a callee was
 sometimes decompiled with too few parameters (matching on the DS, garbage on the PC). func_0208f7d0 dropped the
-light flags for func_02077e04, which set the dogs' material to depth-test-equal and hid them. 134 functions are
-defined with fewer parameters than some caller passes (most are stubs that ignore them); not yet audited.
+light flags for func_02077e04, which set the dogs' material to depth-test-equal and hid them. `port/tools/argscan.py`
+finds these from the original asm (registers read before written, or forwarded to a callee that uses them); all
+10 more it found are fixed (the dog material colour setters among them). What it still lists was reviewed and is
+harmless: func_0204160c/02062700/020627c0/020636d0 take a 64-bit argument (two registers), and
+func_0208cc2c/0208cdfc/0208db60/020fdb24 leave don't-care registers for callees called in loops.
 
 ## Build
 ```
