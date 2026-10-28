@@ -827,7 +827,7 @@ void hw_halt(void)
     t = now_ms();
     if (hw_status > 1) {  /* NDOGS_STATUS=2: per-frame busy time (VBlank to halt, including drawing) and traps */
         static u32 last_traps;
-        fprintf(stderr, "busy %.1fms traps %u\n", t - (next_vblank - FRAME_MS), hw_trap_count - last_traps);
+        fprintf(stderr, "busy %.1fms (from the frame start) traps %u\n", t - frame_wall, hw_trap_count - last_traps);
         last_traps = hw_trap_count;
     }
     if (next_vblank > t)

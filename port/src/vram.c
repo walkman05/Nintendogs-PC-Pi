@@ -184,3 +184,19 @@ void vram_flatten(int role, u8 *dst, u32 size)
             memcpy(dst + banks[i].role_off, banks[i].store, n);
         }
 }
+
+/* Which bank holds byte <offset> of a CPU-visible role, and where inside it (-1 if none). */
+int vram_bank_at(int role, u32 offset, u32 *bank_off)
+{
+    u32 a;
+    int i;
+    if (role < 0 || role >= VRAM_ROLE_COUNT || !role_base[role] || offset >= role_size[role])
+        return -1;
+    a = role_base[role] + offset;
+    for (i = 0; i < 9; i++)
+        if (banks[i].cpu && a - banks[i].cpu < banks[i].size) {
+            *bank_off = a - banks[i].cpu;
+            return i;
+        }
+    return -1;
+}

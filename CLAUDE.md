@@ -126,6 +126,14 @@ func_0208cc2c/0208cdfc/0208db60/020fdb24 leave don't-care registers for callees 
   dlopen on Linux; +6 dB output gain (`NDOGS_VOLUME=<percent>`), `NDOGS_WAV=<file>` records, `NDOGS_MUTE=1`.
 - `port/src/window.c`: resizable window (aspect kept, F11 full screen on Windows), XInput gamepads, X11 window on
   Linux via dlopen (not yet run on Linux). `NDOGS_SNDLOG=1` logs sound commands.
+- Internal resolution (`NDOGS_SCALE=1-4`, default 2, F8 cycles): gpu3d rasterises at 256S x 192S in parallel
+  scanline bands (`port/src/workers.c`, `NDOGS_THREADS`), plus a downsampled native frame for the 2D engines.
+  gpu2d records each pixel's source (`gpu2d_src`: unchanged 3D, or a 1:1 direct-colour bitmap pixel with its VRAM
+  address); video.c composes the screens at S x by taking those pixels from the hi-res 3D frame or from a hi-res
+  copy of the display capture that wrote that VRAM (so the second screen's 3D is sharp too). Everything else is
+  the native pixel enlarged. 2x costs ~2 ms per frame, 3x ~6 ms (at the limit on an 8-thread CPU).
+- Window: F9 stacked / side by side (`NDOGS_LAYOUT`), F10 keep aspect / stretch / whole multiples
+  (`NDOGS_ASPECT`), F11 full screen.
 - Not done: microphone (the full game's name calling), direct channel/stream sound commands (unused so far).
 
 ## Build

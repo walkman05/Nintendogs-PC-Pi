@@ -1,7 +1,8 @@
-/* The window: both DS screens stacked (top, then bottom), scaled to the window with the aspect ratio kept. The mouse
- * on the bottom screen is the stylus. Keyboard: arrows = D-pad, Z = A, X = B, A = Y, S = X, Q = L, W = R,
- * Enter = Start, Shift (or Backspace) = Select, F11 = full screen (Windows). Gamepads: XInput on Windows (A/B/X/Y in
- * the Nintendo layout, D-pad or left stick, shoulders = L/R, Start/Back = Start/Select).
+/* The window: both DS screens, stacked or side by side (F9), scaled to the window keeping the aspect ratio, stretched
+ * to fill it, or at the largest whole multiple (F10); F8 cycles the internal resolution (1-4x, NDOGS_SCALE, default
+ * 2). The mouse on the bottom screen is the stylus. Keyboard: arrows = D-pad, Z = A, X = B, A = Y, S = X, Q = L,
+ * W = R, Enter = Start, Shift (or Backspace) = Select, F11 = full screen (Windows). Gamepads: XInput on Windows
+ * (A/B/X/Y in the Nintendo layout, D-pad or left stick, shoulders = L/R, Start/Back = Start/Select).
  * Windows: Win32 GDI. Linux: X11 through dlopen (no build dependency; headless if there's no display).
  * The UI libraries are loaded at run time, after the DS memory map is reserved: loaded at startup they allocate
  * memory inside the DS address range. */
@@ -22,22 +23,60 @@
 #define KEY_X 0x400
 #define KEY_Y 0x800
 
-static u32 pixels[DS_W * DS_H * 2];
+#define MAXS 4
+static u32 pixels[DS_W * DS_H * 2 * MAXS * MAXS];  /* the canvas: both screens in the current layout */
+static int can_w = DS_W, can_h = DS_H * 2;        /* canvas size */
+static int scr_w = DS_W, scr_h = DS_H;            /* one screen in the canvas */
 static int closed;
 static int mouse_down, mouse_x, mouse_y;  /* in DS bottom-screen pixels */
 static u32 keys_down;                     /* pressed keyboard keys as KEY_ bits */
 static u32 pad_down;                      /* pressed gamepad buttons as KEY_ bits */
 static int win_w, win_h;                  /* client size */
+static int layout;                        /* 0 stacked, 1 side by side */
+static int aspect;                        /* 0 keep, 1 stretch, 2 whole multiples */
+static int scale_req = -1;
 
-/* where the 256x384 picture sits in the client area (letterboxed, aspect kept) */
+int window_scale(void)
+{
+    if (scale_req < 0) {
+        /* starting layout and aspect mode: NDOGS_LAYOUT=0 stacked / 1 side by side,
+         * NDOGS_ASPECT=0 keep / 1 stretch / 2 whole multiples */
+        layout = getenv("NDOGS_LAYOUT") ? atoi(getenv("NDOGS_LAYOUT")) & 1 : 0;
+        aspect = getenv("NDOGS_ASPECT") ? atoi(getenv("NDOGS_ASPECT")) % 3 : 0;
+        scale_req = getenv("NDOGS_SCALE") ? atoi(getenv("NDOGS_SCALE")) : 2;
+        scale_req = scale_req < 1 ? 1 : scale_req > MAXS ? MAXS : scale_req;
+    }
+    return scale_req;
+}
+
+/* function keys shared by the platforms: F8 resolution, F9 layout, F10 aspect */
+static void fkey(int n)
+{
+    if (n == 8)
+        scale_req = window_scale() % MAXS + 1;
+    else if (n == 9)
+        layout ^= 1;
+    else if (n == 10)
+        aspect = (aspect + 1) % 3;
+}
+
+/* where the canvas sits in the client area */
 static void fit(int *x, int *y, int *w, int *h)
 {
-    if (win_w * DS_H * 2 > win_h * DS_W) {
+    int lw = layout ? DS_W * 2 : DS_W, lh = layout ? DS_H : DS_H * 2;  /* canvas shape in DS pixels */
+    if (aspect == 1) {
+        *w = win_w;
         *h = win_h;
-        *w = win_h * DS_W / (DS_H * 2);
+    } else if (aspect == 2 && win_w >= lw && win_h >= lh) {
+        int k = win_w / lw < win_h / lh ? win_w / lw : win_h / lh;
+        *w = lw * k;
+        *h = lh * k;
+    } else if (win_w * lh > win_h * lw) {
+        *h = win_h;
+        *w = win_h * lw / lh;
     } else {
         *w = win_w;
-        *h = win_w * DS_H * 2 / DS_W;
+        *h = win_w * lh / lw;
     }
     *x = (win_w - *w) / 2;
     *y = (win_h - *h) / 2;
@@ -49,8 +88,32 @@ static void mouse_at(int cx, int cy)
     fit(&x, &y, &w, &h);
     if (w <= 0 || h <= 0)
         return;
-    mouse_x = (cx - x) * DS_W / w;
-    mouse_y = (cy - y) * DS_H * 2 / h - DS_H;
+    if (layout) {  /* bottom screen on the right */
+        mouse_x = (cx - x) * DS_W * 2 / w - DS_W;
+        mouse_y = (cy - y) * DS_H / h;
+    } else {
+        mouse_x = (cx - x) * DS_W / w;
+        mouse_y = (cy - y) * DS_H * 2 / h - DS_H;
+    }
+}
+
+/* both screens (w x h each) into the canvas */
+static void build_canvas(const u32 *top, const u32 *bottom, int w, int h)
+{
+    int y;
+    scr_w = w;
+    scr_h = h;
+    can_w = layout ? w * 2 : w;
+    can_h = layout ? h : h * 2;
+    if (!layout) {
+        memcpy(pixels, top, (size_t)w * h * 4);
+        memcpy(pixels + w * h, bottom, (size_t)w * h * 4);
+        return;
+    }
+    for (y = 0; y < h; y++) {
+        memcpy(pixels + y * can_w, top + y * w, (size_t)w * 4);
+        memcpy(pixels + y * can_w + w, bottom + y * w, (size_t)w * 4);
+    }
 }
 
 int window_touch(int *x, int *y)
@@ -184,6 +247,10 @@ static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
     case WM_KEYDOWN:
         if (wp == VK_F11 && !(lp & 0x40000000))
             toggle_fullscreen();
+        if (wp >= VK_F8 && wp <= VK_F10 && !(lp & 0x40000000)) {
+            fkey((int)(wp - VK_F1) + 1);
+            W.InvalidateRect(h, 0, TRUE);
+        }
         keys_down |= key_bit(wp);
         return 0;
     case WM_KEYUP:
@@ -212,13 +279,13 @@ static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
         W.FillRect(dc, &r, (HBRUSH)W.GetStockObject(BLACK_BRUSH));
         memset(&bi, 0, sizeof bi);
         bi.bmiHeader.biSize = sizeof bi.bmiHeader;
-        bi.bmiHeader.biWidth = DS_W;
-        bi.bmiHeader.biHeight = -DS_H * 2;
+        bi.bmiHeader.biWidth = can_w;
+        bi.bmiHeader.biHeight = -can_h;
         bi.bmiHeader.biPlanes = 1;
         bi.bmiHeader.biBitCount = 32;
         bi.bmiHeader.biCompression = BI_RGB;
         W.SetStretchBltMode(dc, COLORONCOLOR);
-        W.StretchDIBits(dc, x, y, w, hh, 0, 0, DS_W, DS_H * 2, pixels, &bi, DIB_RGB_COLORS, SRCCOPY);
+        W.StretchDIBits(dc, x, y, w, hh, 0, 0, can_w, can_h, pixels, &bi, DIB_RGB_COLORS, SRCCOPY);
         W.EndPaint(h, &ps);
         return 0;
     }
@@ -255,6 +322,7 @@ int window_open(int s)
     WNDCLASSA wc;
     RECT r;
     int scale = s > 0 ? s : 2;
+    window_scale();
     if (!load_ui())
         return 0;
     memset(&wc, 0, sizeof wc);
@@ -265,26 +333,25 @@ int window_open(int s)
     W.RegisterClassA(&wc);
     r.left = 0;
     r.top = 0;
-    r.right = DS_W * scale;
-    r.bottom = DS_H * 2 * scale;
+    r.right = DS_W * scale * (layout ? 2 : 1);
+    r.bottom = DS_H * scale * (layout ? 1 : 2);
+    win_w = r.right;
+    win_h = r.bottom;
     W.AdjustWindowRect(&r, WSTYLE, FALSE);
     wnd = W.CreateWindowExA(0, "nintendogs_pc", "Nintendogs", WSTYLE, CW_USEDEFAULT, CW_USEDEFAULT,
                             r.right - r.left, r.bottom - r.top, 0, 0, wc.hInstance, 0);
     if (!wnd)
         return 0;
-    win_w = DS_W * scale;
-    win_h = DS_H * 2 * scale;
     W.ShowWindow(wnd, SW_SHOW);
     return 1;
 }
 
-int window_present(const u32 *top, const u32 *bottom)
+int window_present(const u32 *top, const u32 *bottom, int w, int h)
 {
     MSG m;
     if (!wnd)
         return 1;
-    memcpy(pixels, top, DS_W * DS_H * 4);
-    memcpy(pixels + DS_W * DS_H, bottom, DS_W * DS_H * 4);
+    build_canvas(top, bottom, w, h);
     W.InvalidateRect(wnd, 0, FALSE);
     while (W.PeekMessageA(&m, 0, 0, 0, PM_REMOVE)) {
         W.TranslateMessage(&m);
@@ -401,21 +468,23 @@ int window_open(int s)
     return 1;
 }
 
-int window_present(const u32 *top, const u32 *bottom)
+int window_present(const u32 *top, const u32 *bottom, int sw, int sh)
 {
     int x, y, w, h, i, j;
     if (!dpy)
         return 1;
-    memcpy(pixels, top, DS_W * DS_H * 4);
-    memcpy(pixels + DS_W * DS_H, bottom, DS_W * DS_H * 4);
+    build_canvas(top, bottom, sw, sh);
     while (X.XPending(dpy)) {
         XEv e;
         X.XNextEvent(dpy, &e);
         switch (e.type) {
         case KeyPress:
         case KeyRelease: {
-            u32 b = xkey_bit(X.XLookupKeysym(&e.input, 0));
+            unsigned long ks = X.XLookupKeysym(&e.input, 0);
+            u32 b = xkey_bit(ks);
             keys_down = e.type == KeyPress ? keys_down | b : keys_down & ~b;
+            if (e.type == KeyPress && ks >= 0xffc5 && ks <= 0xffc7)  /* F8-F10 */
+                fkey((int)(ks - 0xffbe) + 1);
             break;
         }
         case ButtonPress:
@@ -449,11 +518,12 @@ int window_present(const u32 *top, const u32 *bottom)
             return !closed;
     }
     fit(&x, &y, &w, &h);
+    memset(frame, 0, (size_t)frame_w * frame_h * 4);  /* borders (layout or aspect may have changed) */
     for (j = 0; j < h; j++) {
-        const u32 *src = pixels + (j * DS_H * 2 / h) * DS_W;
+        const u32 *src = pixels + (j * can_h / h) * can_w;
         u32 *dst = frame + (y + j) * frame_w + x;
         for (i = 0; i < w; i++)
-            dst[i] = src[i * DS_W / w] & 0xffffff;
+            dst[i] = src[i * can_w / w] & 0xffffff;
     }
     X.XPutImage(dpy, xwin, X.XDefaultGC(dpy, X.XDefaultScreen(dpy)), ximg, 0, 0, 0, 0, (unsigned)frame_w,
                 (unsigned)frame_h);

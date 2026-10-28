@@ -33,6 +33,7 @@ void vram_cnt_written(int bank, u8 value);  /* VRAMCNT_A..I changed (bank 0..8) 
 void vram_init(void);
 u16 *vram_bank_ptr(int bank);
 void vram_flatten(int role, u8 *dst, u32 size); /* copy of a hidden role (textures, texture palettes) */               /* bank A-D (0-3) storage, for display capture */
+int vram_bank_at(int role, u32 offset, u32 *bank_off);  /* bank holding a CPU-visible role byte, or -1 */
 
 /* ---- I/O snapshot (port/src/hw.c) -------------------------------------------------------------------------------
  * Register values as the game last wrote them: io[0x0000..0x1fff] is 0x04000000..0x04001fff (engine A registers
@@ -46,6 +47,10 @@ void hw_io_snapshot(u8 *io /* 0x2000 bytes */);
  * low 24 bits 0xRRGGBB) or NULL. Applies windows, blending, mosaic where implemented, and master brightness.
  * Output: 0x00RRGGBB. */
 void gpu2d_render(int engine, const u8 *io, const u32 *frame3d, u32 *out);
+#define GPU2D_SRC_3D 1u
+#define GPU2D_SRC_VRAM 0x80000000u
+extern u32 gpu2d_src[2][DS_W * DS_H];       /* per-pixel source of the last render (see gpu2d.c) */
+u32 gpu2d_bright_pixel(int engine, const u8 *io, u32 c);  /* master brightness for one pixel */
 extern int gpu2d_no_brightness;             /* render without master brightness (capture source) */
 void gpu2d_brightness(int engine, const u8 *io, u32 *out);
 void hw_capture_done(void);                 /* clears DISPCAPCNT's enable bit once a capture has been taken */
@@ -59,14 +64,21 @@ void hw_capture_done(void);                 /* clears DISPCAPCNT's enable bit on
  * (matrix stack levels, busy = 0). */
 void gx_command(u32 port, u32 value);
 void gx_render_swapped(const u8 *io, u32 *out);
-int gx_swap_pending(void);   /* nonzero after SWAP_BUFFERS until the next gx_render_swapped */
+int gx_swap_pending(void);
+void gx_set_scale(int s);      /* internal 3D resolution: 1-4 times 256x192 */
+int gx_scale(void);
+const u32 *gx_hires(void);     /* the last rendered 3D frame at (256*s) x (192*s), 0x80RRGGBB */
+void workers_init(void);       /* host worker threads (port/src/workers.c) */
+void workers_run(int n, void (*fn)(int job, void *arg), void *arg);
+int workers_count(void);   /* nonzero after SWAP_BUFFERS until the next gx_render_swapped */
 u32 gx_status(void);
 void gx_init(void);
 
 /* ---- window (port/src/window.c) ---------------------------------------------------------------------------------- */
 int window_open(int scale);
 /* top and bottom screen, 256x192 each, 0x00RRGGBB; returns 0 when the user closed the window */
-int window_present(const u32 *top, const u32 *bottom);
+int window_present(const u32 *top, const u32 *bottom, int w, int h);  /* each screen w x h */
+int window_scale(void);  /* internal resolution chosen by the user (NDOGS_SCALE, F8 cycles 1-4) */
 /* mouse on the bottom screen: returns 1 while the left button is down inside it, with DS coordinates */
 int window_touch(int *x, int *y);
 u32 window_keys(void);  /* DS KEYINPUT bits (0 = pressed), plus X/Y in bits 10/11 */

@@ -14,9 +14,16 @@
  * rendered from one register snapshot), main-memory display FIFO. Display capture is in video.c.
  *
  * Layer pixels are kept as 0x80000000 | 0x00RRGGBB (bit 31 = opaque); effects are computed on 8-bit channels. */
+#include <string.h>
 #include "ds_video.h"
 
 #define OPAQUE 0x80000000u
+
+/* Where each final pixel came from, for the high-resolution compositor (video.c): GPU2D_SRC_3D for the 3D layer
+ * shown unchanged, GPU2D_SRC_VRAM | role << 24 | offset for a direct-colour bitmap pixel (bitmap BG or bitmap OBJ)
+ * shown 1:1 and unchanged, 0 for anything else. */
+u32 gpu2d_src[2][DS_W * DS_H];
+static u32 bgsrc[4][DS_W];
 
 /* palette RAM and OAM are plain memory at their DS addresses (mapped by platform_mem.c) */
 static const u16 *pal_bg(int engine) { return (const u16 *)(0x05000000u + (u32)engine * 0x400u); }
@@ -177,8 +184,13 @@ static void render_affine(const Gpu *g, int bg, int kind, int y, u32 *line)
             break;
         }
         case AFF_BMP16: {
-            u16 c = vram_read16(g->bgvram, bmpbase + ((u32)ty * (u32)w + (u32)tx) * 2u);
-            if (c & 0x8000) out = col(c);
+            u32 off = bmpbase + ((u32)ty * (u32)w + (u32)tx) * 2u;
+            u16 c = vram_read16(g->bgvram, off);
+            if (c & 0x8000) {
+                out = col(c);
+                if (pa == 0x100 && pc == 0 && pd == 0x100 && pbv == 0)
+                    bgsrc[bg][x] = GPU2D_SRC_VRAM | (u32)g->bgvram << 24 | off;
+            }
             break;
         }
         }
@@ -214,6 +226,7 @@ typedef struct {
     u8 flags[DS_W];
     u8 alpha[DS_W];   /* bitmap OBJ alpha 0-15 */
     u8 win[DS_W];     /* OBJ window mask */
+    u32 src[DS_W];    /* bitmap OBJ source (see gpu2d_src) */
 } ObjLine;
 
 static void render_objs(const Gpu *g, int y, ObjLine *ol)
@@ -231,7 +244,7 @@ static void render_objs(const Gpu *g, int y, ObjLine *ol)
     if (g->engine && bnd > 2) bnd = 2;
     if (g->engine) bmpbnd = 0;
 
-    for (x = 0; x < DS_W; x++) { ol->color[x] = 0; ol->win[x] = 0; ol->flags[x] = 0; ol->prio[x] = 4; }
+    for (x = 0; x < DS_W; x++) { ol->color[x] = 0; ol->win[x] = 0; ol->flags[x] = 0; ol->prio[x] = 4; ol->src[x] = 0; }
 
     for (i = 0; i < 128; i++) {
         u16 a0 = oam[i * 4], a1 = oam[i * 4 + 1], a2 = oam[i * 4 + 2];
@@ -281,7 +294,7 @@ static void render_objs(const Gpu *g, int y, ObjLine *ol)
 
         for (x = x0; x < x1; x++) {
             int tx, ty;
-            u32 c;
+            u32 c, srcv = 0;
             if (affine) {
                 s32 dx = x - ox - bw / 2, dy = line - bh / 2;
                 tx = ((pa * dx + pbv * dy) >> 8) + w / 2;
@@ -296,9 +309,11 @@ static void render_objs(const Gpu *g, int y, ObjLine *ol)
 
             if (mode == 3) {
                 u32 stride = bmp1d ? (u32)w * 2u : ((dc & 0x20) ? 512u : 256u);
-                u16 p = vram_read16(g->objvram, tilebase + (u32)ty * stride + (u32)tx * 2u);
+                u32 off = tilebase + (u32)ty * stride + (u32)tx * 2u;
+                u16 p = vram_read16(g->objvram, off);
                 if (!(p & 0x8000)) continue;
                 c = col(p);
+                srcv = affine || (a1 & 0x3000) ? 0 : GPU2D_SRC_VRAM | (u32)g->objvram << 24 | off;
             } else if (bpp8) {
                 u32 addr = tilebase + (u32)(ty & 7) * 8u + (u32)(tx & 7);
                 int ci;
@@ -327,6 +342,7 @@ static void render_objs(const Gpu *g, int y, ObjLine *ol)
             ol->prio[x] = (u8)prio;
             ol->flags[x] = (u8)(mode == 1 ? OBJF_SEMI : mode == 3 ? OBJF_BITMAP : 0);
             ol->alpha[x] = (u8)alpha;
+            ol->src[x] = mode == 3 ? srcv : 0;
         }
     }
 }
@@ -371,6 +387,15 @@ static int win_inside(int v, u16 reg)
 /* set by video.c while rendering engine A for display capture, which takes the image before master brightness */
 int gpu2d_no_brightness;
 
+u32 gpu2d_bright_pixel(int engine, const u8 *io, u32 c)
+{
+    u16 mb = rd16(io + (engine ? 0x1000 : 0), 0x6c);
+    int mode = mb >> 14, f = mb & 31;
+    if (f > 16) f = 16;
+    if (!f || mode == 0 || mode == 3) return c & 0xffffff;
+    return mode == 1 ? brighten(c, f) & 0xffffff : darken(c, f) & 0xffffff;
+}
+
 static void master_brightness(const u8 *r, u32 *row)
 {
     u16 mb = rd16(r, 0x6c);
@@ -408,6 +433,7 @@ void gpu2d_render(int engine, const u8 *io, const u32 *frame3d, u32 *out)
 
     if (!s_lut_ready) init_lut();
     engine = engine ? 1 : 0;
+    memset(gpu2d_src[engine], 0, sizeof gpu2d_src[engine]);
     r = io + engine * 0x1000;
     dc = rd32(r, 0);
     dispmode = (dc >> 16) & 3;
@@ -505,6 +531,7 @@ void gpu2d_render(int engine, const u8 *io, const u32 *frame3d, u32 *out)
 
         for (i = 0; i < 4; i++) {
             int ly = bgmos[i] ? y - y % g.mosv : y;
+            memset(bgsrc[i], 0, sizeof bgsrc[i]);
             switch (bgkind[i]) {
             case -1: break;
             case 0: render_text(&g, i, ly, bgline[i]); break;
@@ -560,6 +587,19 @@ void gpu2d_render(int engine, const u8 *io, const u32 *frame3d, u32 *out)
                 }
             }
             row[x] = res;
+            /* source of the pixel, if it's shown unchanged (no effect or mosaic) */
+            {
+                u32 sv = 0;
+                if (res == (c[0] & 0xffffff)) {
+                    if (l[0] == 4)
+                        sv = ol.src[x];
+                    else if (l[0] < 4 && bgkind[l[0]] == 1)
+                        sv = GPU2D_SRC_3D;
+                    else if (l[0] < 4 && !bgmos[l[0]])
+                        sv = bgsrc[l[0]][x];
+                }
+                gpu2d_src[engine][y * DS_W + x] = sv;
+            }
         }
         master_brightness(r, row);
     }

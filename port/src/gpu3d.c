@@ -816,7 +816,11 @@ void gx_init(void)
 }
 
 /* ---- rendering engine ---------------------------------------------------------------------------------------- */
-#define NPIX (DS_W * DS_H)
+/* Internal resolution: the scene is rasterised at g_scale times the DS's 256x192 (1-4, gx_set_scale); RW x RH pixels.
+ * Rasterising is split into horizontal bands run in parallel (port/src/workers.c). */
+#define MAXS 4
+#define NPIX (DS_W * DS_H * MAXS * MAXS)
+static int g_scale = 1, RW = DS_W, RH = DS_H;
 static u32 rb_color[NPIX];   /* r | g<<8 | b<<16 (6 bit each) | alpha(5 bit)<<24 */
 static u32 rb_depth[NPIX];
 static u8 rb_opid[NPIX];     /* opaque polygon ID */
@@ -934,14 +938,15 @@ typedef struct {
     u16 toon[32];
 } rctx_t;
 
-static int g_shadow_drawn; /* a non-mask shadow polygon was drawn since the stencil was last cleared */
 
 #define NA 7 /* interpolated: 1/w, z, r/w, g/w, b/w, s/w, t/w */
 
-static void raster_poly(const poly_t *p, const rctx_t *rc)
+/* rasterise one polygon into the rows [by0, by1) of the RW x RH buffers; *shadow_drawn: a non-mask shadow polygon
+ * was drawn in this band since its stencil was last cleared */
+static void raster_poly(const poly_t *p, const rctx_t *rc, int by0, int by1, int *shadow_drawn)
 {
-    float at[MAX_PV][NA];
-    int n = p->nv, i, y, y0, y1, k;
+    float at[MAX_PV][NA], px[MAX_PV], py[MAX_PV];
+    int n = p->nv, i, y, y0, y1, wy0, wy1, k;
     u32 attr = p->attr;
     int mode = (attr >> 4) & 3;
     int palpha = (attr >> 16) & 31;
@@ -959,12 +964,12 @@ static void raster_poly(const poly_t *p, const rctx_t *rc)
     if (wire) palpha = 31;
     if (mode == 3) {
         if (pid == 0) {
-            if (g_shadow_drawn) {
-                for (i = 0; i < NPIX; i++) rb_flags[i] &= ~4;
-                g_shadow_drawn = 0;
+            if (*shadow_drawn) {
+                for (i = by0 * RW; i < by1 * RW; i++) rb_flags[i] &= ~4;
+                *shadow_drawn = 0;
             }
         } else
-            g_shadow_drawn = 1;
+            *shadow_drawn = 1;
     }
     if (textured) {
         ti.addr = (p->tex & 0xffff) << 3;
@@ -988,35 +993,37 @@ static void raster_poly(const poly_t *p, const rctx_t *rc)
         at[i][4] = v->f[VB] * iw;
         at[i][5] = v->f[VS] * iw;
         at[i][6] = v->f[VT] * iw;
+        px[i] = v->f[VX] * (float)g_scale;
+        py[i] = v->f[VY] * (float)g_scale;
     }
     {
-        float f = p->ymin - 0.5f;
+        float f = p->ymin * (float)g_scale - 0.5f;
         y0 = (int)f;
         if ((float)y0 < f) y0++; /* ceil */
-        f = p->ymax - 0.5f;
+        f = p->ymax * (float)g_scale - 0.5f;
         y1 = (int)f;
         if ((float)y1 < f) y1++;
     }
-    if (y0 < 0) y0 = 0;
-    if (y1 > DS_H) y1 = DS_H;
+    wy0 = y0;
+    wy1 = y1;
+    if (y0 < by0) y0 = by0;
+    if (y1 > by1) y1 = by1;
 
     for (y = y0; y < y1; y++) {
         float yc = (float)y + 0.5f;
         float xl = 1e30f, xr = -1e30f, L[NA], R[NA], st[NA], cur[NA], dx, f;
         int x0, x1, x;
         for (i = 0; i < n; i++) {
-            const vtx_t *a = &p->v[i], *b = &p->v[(i + 1) % n];
-            float ya = a->f[VY], yb = b->f[VY], t, x;
             int ia = i, ib = (i + 1) % n;
+            float ya = py[ia], yb = py[ib], t, x;
             if (ya == yb) continue;
             if (ya > yb) {
-                const vtx_t *tmp = a; a = b; b = tmp;
-                ya = a->f[VY]; yb = b->f[VY];
                 ia = ib; ib = i;
+                ya = py[ia]; yb = py[ib];
             }
             if (yc < ya || yc >= yb) continue;
             t = (yc - ya) / (yb - ya);
-            x = a->f[VX] + (b->f[VX] - a->f[VX]) * t;
+            x = px[ia] + (px[ib] - px[ia]) * t;
             if (x < xl) {
                 xl = x;
                 for (k = 0; k < NA; k++) L[k] = at[ia][k] + (at[ib][k] - at[ia][k]) * t;
@@ -1039,13 +1046,13 @@ static void raster_poly(const poly_t *p, const rctx_t *rc)
             for (k = 0; k < NA; k++) cur[k] += st[k] * (float)(-x0);
             x0 = 0;
         }
-        if (x1 > DS_W) x1 = DS_W;
+        if (x1 > RW) x1 = RW;
         for (x = x0; x < x1; x++, ({ for (k = 0; k < NA; k++) cur[k] += st[k]; })) {
-            int idx = y * DS_W + x;
+            int idx = y * RW + x;
             float w = 1.0f / cur[0];
             u32 depth, dd;
             int r, g, b, a, pass;
-            if (wire && !(x == x0 || x == x1 - 1 || y == y0 || y == y1 - 1))
+            if (wire && !(x == x0 || x == x1 - 1 || y == wy0 || y == wy1 - 1))
                 continue;
             if (rc->wbuf) {
                 float wd = w;
@@ -1173,6 +1180,151 @@ static inline u16 io16(const u8 *io, u32 o) { return (u16)(io[o] | (io[o + 1] <<
 static inline u32 io32(const u8 *io, u32 o) { return io16(io, o) | ((u32)io16(io, o + 2) << 16); }
 static inline u32 c6to8(u32 c) { return (c << 2) | (c >> 4); }
 
+/* ---- frame: banded rendering ---------------------------------------------------------------------------- */
+typedef struct {
+    const plist_t *L;
+    const rctx_t *rc;
+    const int *order;
+    int n, bands;
+    const u8 *io;
+    u32 clr, cc, cdepth;
+} RenderJob;
+
+static u32 g_hires[NPIX];  /* last frame at RW x RH, 0x80RRGGBB (bit 31 = opaque) */
+
+static void band_rows(const RenderJob *j, int b, int *y0, int *y1)
+{
+    *y0 = RH * b / j->bands;
+    *y1 = RH * (b + 1) / j->bands;
+}
+
+static void raster_band(int b, void *arg)
+{
+    const RenderJob *j = arg;
+    int y0, y1, i, shadow = 0;
+    band_rows(j, b, &y0, &y1);
+    for (i = y0 * RW; i < y1 * RW; i++) {
+        rb_color[i] = j->cc;
+        rb_depth[i] = j->cdepth;
+    }
+    memset(rb_opid + y0 * RW, (j->clr >> 24) & 63, (size_t)(y1 - y0) * RW);
+    memset(rb_trid + y0 * RW, 0xff, (size_t)(y1 - y0) * RW);
+    memset(rb_flags + y0 * RW, (j->clr >> 15) & 1, (size_t)(y1 - y0) * RW);
+    for (i = 0; i < j->n; i++)
+        raster_poly(&j->L->poly[j->order[i]], j->rc, y0, y1, &shadow);
+}
+
+static void finish_band(int b, void *arg)
+{
+    const RenderJob *j = arg;
+    const u8 *io = j->io;
+    u32 disp3dcnt = j->rc->disp3dcnt;
+    int y0, y1, x, y, i;
+    band_rows(j, b, &y0, &y1);
+
+    /* edge marking: opaque polygon pixels in front of a neighbour with a different polygon ID (the neighbour
+     * buffers are final: all bands finished rasterising) */
+    for (y = y0; y < y1; y++)
+        for (x = 0; x < RW; x++) {
+            int idx = y * RW + x, k, edge = 0;
+            u8 id = rb_opid[idx];
+            u32 d = rb_depth[idx], c = rb_color[idx];
+            if ((disp3dcnt & 0x20) && (rb_flags[idx] & 2)) {
+                for (k = 0; k < 4 && !edge; k++) {
+                    int nx = x + (k == 0 ? -g_scale : k == 1 ? g_scale : 0), ny = y + (k == 2 ? -g_scale : k == 3 ? g_scale : 0);
+                    u8 nid;
+                    u32 nd;
+                    if (nx < 0 || nx >= RW || ny < 0 || ny >= RH) { nid = (j->clr >> 24) & 63; nd = j->cdepth; }
+                    else { nid = rb_opid[ny * RW + nx]; nd = rb_depth[ny * RW + nx]; }
+                    if (nid != id && d < nd) edge = 1;
+                }
+                if (edge) {
+                    u16 e = io16(io, 0x330 + (id >> 3) * 2);
+                    c = c5to6(e & 31) | (c5to6((e >> 5) & 31) << 8) | (c5to6((e >> 10) & 31) << 16) | (c & 0xff000000u);
+                }
+            }
+            g_hires[idx] = c;  /* 6-bit colour for now */
+        }
+
+    /* fog */
+    if (disp3dcnt & 0x80) {
+        int shift = (disp3dcnt >> 8) & 15, alpha_only = (disp3dcnt >> 6) & 1;
+        int step = shift > 10 ? 1 : 0x400 >> shift;
+        int offset = io16(io, 0x35c) & 0x7fff;
+        u32 fc = io32(io, 0x358);
+        int fr = c5to6(fc & 31), fg = c5to6((fc >> 5) & 31), fb = c5to6((fc >> 10) & 31), fa = (fc >> 16) & 31;
+        u8 dens_tab[32];
+        for (i = 0; i < 32; i++) dens_tab[i] = io[0x360 + i] & 127;
+        for (i = y0 * RW; i < y1 * RW; i++) {
+            int d, dens, pos, frac;
+            u32 c;
+            if (!(rb_flags[i] & 1)) continue;
+            d = (int)(rb_depth[i] >> 9);
+            /* entry k applies at offset + (k+1)*step; linear in between */
+            pos = d - offset - step;
+            if (pos <= 0) dens = dens_tab[0];
+            else {
+                int k = pos / step;
+                frac = pos % step;
+                if (k >= 31) dens = dens_tab[31];
+                else dens = (dens_tab[k] * (step - frac) + dens_tab[k + 1] * frac) / step;
+            }
+            if (dens >= 127) dens = 128;
+            c = g_hires[i];
+            {
+                int r = c & 63, g = (c >> 8) & 63, bb = (c >> 16) & 63, a = c >> 24;
+                if (!alpha_only) {
+                    r = (fr * dens + r * (128 - dens)) >> 7;
+                    g = (fg * dens + g * (128 - dens)) >> 7;
+                    bb = (fb * dens + bb * (128 - dens)) >> 7;
+                }
+                a = (fa * dens + a * (128 - dens)) >> 7;
+                g_hires[i] = (u32)r | ((u32)g << 8) | ((u32)bb << 16) | ((u32)a << 24);
+            }
+        }
+    }
+
+    /* to 0x80RRGGBB */
+    for (i = y0 * RW; i < y1 * RW; i++) {
+        u32 c = g_hires[i];
+        u32 o = (c6to8(c & 63) << 16) | (c6to8((c >> 8) & 63) << 8) | c6to8((c >> 16) & 63);
+        g_hires[i] = (c >> 24) ? o | 0x80000000u : o;
+    }
+}
+
+/* the native 256x192 frame for the 2D compositor: each pixel the average of its g_scale x g_scale block (opaque if at
+ * least half of it is) */
+static void downsample(u32 *out)
+{
+    int x, y, sx, sy, n2 = g_scale * g_scale;
+    if (g_scale == 1) {
+        memcpy(out, g_hires, DS_W * DS_H * 4);
+        return;
+    }
+    for (y = 0; y < DS_H; y++)
+        for (x = 0; x < DS_W; x++) {
+            u32 r = 0, g = 0, b = 0, cnt = 0;
+            for (sy = 0; sy < g_scale; sy++) {
+                const u32 *p = g_hires + (y * g_scale + sy) * RW + x * g_scale;
+                for (sx = 0; sx < g_scale; sx++)
+                    if (p[sx] >> 31) {
+                        r += (p[sx] >> 16) & 255; g += (p[sx] >> 8) & 255; b += p[sx] & 255;
+                        cnt++;
+                    }
+            }
+            out[y * DS_W + x] = cnt * 2 >= (u32)n2 ? 0x80000000u | (r / cnt) << 16 | (g / cnt) << 8 | (b / cnt) : 0;
+        }
+}
+
+void gx_set_scale(int sc)
+{
+    g_scale = sc < 1 ? 1 : sc > MAXS ? MAXS : sc;
+    RW = DS_W * g_scale;
+    RH = DS_H * g_scale;
+}
+int gx_scale(void) { return g_scale; }
+const u32 *gx_hires(void) { return g_hires; }
+
 void gx_render_swapped(const u8 *io, u32 *out)
 {
     static int order[MAX_POLY];
@@ -1193,23 +1345,9 @@ void gx_render_swapped(const u8 *io, u32 *out)
         rc.toon[i] = io16(io, 0x380 + i * 2);
 
     double tp0 = now_ms(), tp1, tp2;
+    static RenderJob rj;
     vram_flatten(VRAM_TEX, tex_mem, sizeof tex_mem);
     vram_flatten(VRAM_TEXPAL, texpal_mem, 0x18000);
-
-    /* rear plane */
-
-    {
-        u32 r = c5to6(clr & 31), g = c5to6((clr >> 5) & 31), b = c5to6((clr >> 10) & 31);
-        cc = r | (g << 8) | (b << 16) | (((clr >> 16) & 31) << 24);
-    }
-    for (i = 0; i < NPIX; i++) {
-        rb_color[i] = cc;
-        rb_depth[i] = cdepth;
-    }
-    memset(rb_opid, (clr >> 24) & 63, sizeof(rb_opid));
-    memset(rb_trid, 0xff, sizeof(rb_trid));
-    memset(rb_flags, (clr >> 15) & 1, sizeof(rb_flags));
-    g_shadow_drawn = 0;
 
     /* opaque polygons first (Y-sorted), then translucent (Y-sorted unless manual sort) */
     g_sort_polys = L->poly;
@@ -1221,86 +1359,29 @@ void gx_render_swapped(const u8 *io, u32 *out)
     if (!(L->swapflags & 1))
         sort_idx(order + nop, ntr);
     n = nop + ntr;
+
+    {
+        u32 r = c5to6(clr & 31), g = c5to6((clr >> 5) & 31), b = c5to6((clr >> 10) & 31);
+        cc = r | (g << 8) | (b << 16) | (((clr >> 16) & 31) << 24);
+    }
+    rj.L = L;
+    rj.rc = &rc;
+    rj.order = order;
+    rj.n = n;
+    rj.io = io;
+    rj.clr = clr;
+    rj.cc = cc;
+    rj.cdepth = cdepth;
+    rj.bands = workers_count() * 2;
+    if (rj.bands > RH)
+        rj.bands = RH;
     tp1 = now_ms();
-    for (i = 0; i < n; i++)
-        raster_poly(&L->poly[order[i]], &rc);
+    workers_run(rj.bands, raster_band, &rj);   /* rear plane + polygons */
+    workers_run(rj.bands, finish_band, &rj);   /* edge marking, fog, output */
+    downsample(out);
     tp2 = now_ms();
     if (getenv("NDOGS_VLOG"))
-        fprintf(stderr, "3d: %d polys (%d translucent), setup %.2fms raster %.2fms\n", n, ntr, tp1 - tp0, tp2 - tp1);
-
-    /* edge marking: opaque polygon pixels in front of a neighbour with a different polygon ID */
-    if (rc.disp3dcnt & 0x20) {
-        static u32 ecol[NPIX];
-        int x, y;
-        u8 rear_id = (clr >> 24) & 63;
-        for (y = 0; y < DS_H; y++)
-            for (x = 0; x < DS_W; x++) {
-                int idx = y * DS_W + x, k;
-                u8 id = rb_opid[idx];
-                u32 d = rb_depth[idx];
-                int edge = 0;
-                ecol[idx] = rb_color[idx];
-                if (!(rb_flags[idx] & 2)) continue;
-                for (k = 0; k < 4 && !edge; k++) {
-                    int nx = x + (k == 0 ? -1 : k == 1 ? 1 : 0), ny = y + (k == 2 ? -1 : k == 3 ? 1 : 0);
-                    u8 nid;
-                    u32 nd;
-                    if (nx < 0 || nx >= DS_W || ny < 0 || ny >= DS_H) { nid = rear_id; nd = cdepth; }
-                    else { nid = rb_opid[ny * DS_W + nx]; nd = rb_depth[ny * DS_W + nx]; }
-                    if (nid != id && d < nd) edge = 1;
-                }
-                if (edge) {
-                    u16 e = io16(io, 0x330 + (id >> 3) * 2);
-                    ecol[idx] = c5to6(e & 31) | (c5to6((e >> 5) & 31) << 8) | (c5to6((e >> 10) & 31) << 16) |
-                                (rb_color[idx] & 0xff000000u);
-                }
-            }
-        memcpy(rb_color, ecol, sizeof(ecol));
-    }
-
-    /* fog */
-    if (rc.disp3dcnt & 0x80) {
-        int shift = (rc.disp3dcnt >> 8) & 15, alpha_only = (rc.disp3dcnt >> 6) & 1;
-        int step = shift > 10 ? 1 : 0x400 >> shift;
-        int offset = io16(io, 0x35c) & 0x7fff;
-        u32 fc = io32(io, 0x358);
-        int fr = c5to6(fc & 31), fg = c5to6((fc >> 5) & 31), fb = c5to6((fc >> 10) & 31), fa = (fc >> 16) & 31;
-        u8 dens_tab[32];
-        for (i = 0; i < 32; i++) dens_tab[i] = io[0x360 + i] & 127;
-        for (i = 0; i < NPIX; i++) {
-            int d, dens, pos, frac;
-            u32 c;
-            if (!(rb_flags[i] & 1)) continue;
-            d = (int)(rb_depth[i] >> 9);
-            /* entry k applies at offset + (k+1)*step; linear in between */
-            pos = d - offset - step;
-            if (pos <= 0) dens = dens_tab[0];
-            else {
-                int k = pos / step;
-                frac = pos % step;
-                if (k >= 31) dens = dens_tab[31];
-                else dens = (dens_tab[k] * (step - frac) + dens_tab[k + 1] * frac) / step;
-            }
-            if (dens >= 127) dens = 128;
-            c = rb_color[i];
-            {
-                int r = c & 63, g = (c >> 8) & 63, b = (c >> 16) & 63, a = c >> 24;
-                if (!alpha_only) {
-                    r = (fr * dens + r * (128 - dens)) >> 7;
-                    g = (fg * dens + g * (128 - dens)) >> 7;
-                    b = (fb * dens + b * (128 - dens)) >> 7;
-                }
-                a = (fa * dens + a * (128 - dens)) >> 7;
-                rb_color[i] = (u32)r | ((u32)g << 8) | ((u32)b << 16) | ((u32)a << 24);
-            }
-        }
-    }
-
-    for (i = 0; i < NPIX; i++) {
-        u32 c = rb_color[i];
-        u32 o = (c6to8(c & 63) << 16) | (c6to8((c >> 8) & 63) << 8) | c6to8((c >> 16) & 63);
-        if (c >> 24) o |= 0x80000000u;
-        out[i] = o;
-    }
+        fprintf(stderr, "3d: %d polys (%d translucent), setup %.2fms raster %.2fms at %dx\n", n, ntr, tp1 - tp0,
+                tp2 - tp1, g_scale);
     g_swap_pending = 0;
 }
