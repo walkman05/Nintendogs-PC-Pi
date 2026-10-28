@@ -155,7 +155,10 @@ func_0208cc2c/0208cdfc/0208db60/020fdb24 leave don't-care registers for callees 
   copy of the display capture that wrote that VRAM (so the second screen's 3D is sharp too). Everything else is
   the native pixel enlarged. 2x costs ~2 ms per frame, 3x ~6 ms (at the limit on an 8-thread CPU).
 - Window: F9 stacked / side by side (`NDOGS_LAYOUT`), F10 keep aspect / stretch / whole multiples
-  (`NDOGS_ASPECT`), F11 full screen.
+  (`NDOGS_ASPECT`), F11 full screen, F7 bilinear / nearest scaling.
+- Presenting (Windows): an OpenGL 1.1 presenter thread (opengl32.dll loaded at run time) uploads each finished
+  canvas as a texture and swaps with vsync; the game thread only copies the frame, so the monitor never delays
+  the game. `NDOGS_GL=0` uses GDI instead, `NDOGS_VSYNC=0` turns vsync off. Linux still uses XPutImage.
 - Not done: microphone (the full game's name calling), direct channel/stream sound commands (unused so far).
 
 ## Build

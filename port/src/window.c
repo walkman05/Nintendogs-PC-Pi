@@ -6,6 +6,7 @@
  * Windows: Win32 GDI. Linux: X11 through dlopen (no build dependency; headless if there's no display).
  * The UI libraries are loaded at run time, after the DS memory map is reserved: loaded at startup they allocate
  * memory inside the DS address range. */
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "ds_video.h"
@@ -35,6 +36,7 @@ static int win_w, win_h;                  /* client size */
 static int layout;                        /* 0 stacked, 1 side by side */
 static int aspect;                        /* 0 keep, 1 stretch, 2 whole multiples */
 static int scale_req = -1;
+static int filter_linear = 1;             /* GPU presenter: bilinear (1) or nearest (0) scaling, F7 */
 
 int window_scale(void)
 {
@@ -52,7 +54,9 @@ int window_scale(void)
 /* function keys shared by the platforms: F8 resolution, F9 layout, F10 aspect */
 static void fkey(int n)
 {
-    if (n == 8)
+    if (n == 7)
+        filter_linear ^= 1;
+    else if (n == 8)
         scale_req = window_scale() % MAXS + 1;
     else if (n == 9)
         layout ^= 1;
@@ -180,6 +184,178 @@ static int load_ui(void)
 }
 
 static HWND wnd;
+
+/* ---- GPU presenter (OpenGL 1.1 from opengl32.dll, loaded at run time) --------------------------------------------
+ * A thread of its own uploads each finished canvas as a texture and draws it into the fit rectangle, swapping with
+ * vsync: the game thread only copies the frame and signals, so waiting for the monitor never delays the game.
+ * NDOGS_GL=0 keeps the GDI path, NDOGS_VSYNC=0 turns vsync off; F7 switches bilinear / nearest scaling. */
+#define GL_TEXTURE_2D 0x0DE1
+#define GL_COLOR_BUFFER_BIT 0x4000
+#define GL_TEXTURE_MAG_FILTER 0x2800
+#define GL_TEXTURE_MIN_FILTER 0x2801
+#define GL_TEXTURE_WRAP_S 0x2802
+#define GL_TEXTURE_WRAP_T 0x2803
+#define GL_CLAMP_TO_EDGE 0x812F
+#define GL_NEAREST 0x2600
+#define GL_LINEAR 0x2601
+#define GL_RGBA8 0x8058
+#define GL_BGRA 0x80E1
+#define GL_UNSIGNED_BYTE 0x1401
+#define GL_QUADS 0x0007
+#define GL_UNPACK_ROW_LENGTH 0x0CF2
+static struct {
+    HGLRC (WINAPI *CreateContext)(HDC);
+    BOOL (WINAPI *MakeCurrent)(HDC, HGLRC);
+    PROC (WINAPI *GetProcAddress)(LPCSTR);
+    void (WINAPI *Viewport)(int, int, int, int);
+    void (WINAPI *ClearColor)(float, float, float, float);
+    void (WINAPI *Clear)(unsigned);
+    void (WINAPI *Enable)(unsigned);
+    void (WINAPI *GenTextures)(int, unsigned *);
+    void (WINAPI *BindTexture)(unsigned, unsigned);
+    void (WINAPI *TexParameteri)(unsigned, unsigned, int);
+    void (WINAPI *TexImage2D)(unsigned, int, int, int, int, int, unsigned, unsigned, const void *);
+    void (WINAPI *TexSubImage2D)(unsigned, int, int, int, int, int, unsigned, unsigned, const void *);
+    void (WINAPI *PixelStorei)(unsigned, int);
+    void (WINAPI *Begin)(unsigned);
+    void (WINAPI *End)(void);
+    void (WINAPI *TexCoord2f)(float, float);
+    void (WINAPI *Vertex2f)(float, float);
+    BOOL (WINAPI *SwapIntervalEXT)(int);
+    HDC (WINAPI *GetDC)(HWND);
+    int (WINAPI *ChoosePixelFormat)(HDC, const PIXELFORMATDESCRIPTOR *);
+    BOOL (WINAPI *SetPixelFormat)(HDC, int, const PIXELFORMATDESCRIPTOR *);
+    BOOL (WINAPI *SwapBuffers)(HDC);
+} G;
+static volatile int gl_on;                 /* the presenter is running */
+static HANDLE gl_event, gl_ready;
+static CRITICAL_SECTION gl_lock;
+static u32 gl_frame[DS_W * DS_H * 2 * MAXS * MAXS];
+static int gl_w, gl_h, gl_new;
+
+static int gl_load(void)
+{
+    HMODULE o = LoadLibraryA("opengl32.dll"), u = LoadLibraryA("user32.dll"), g = LoadLibraryA("gdi32.dll");
+    if (!o || !u || !g)
+        return 0;
+#define GETW(lib, field, name) (*(FARPROC *)&G.field = GetProcAddress(lib, name))
+    GETW(o, CreateContext, "wglCreateContext"); GETW(o, MakeCurrent, "wglMakeCurrent");
+    GETW(o, GetProcAddress, "wglGetProcAddress"); GETW(o, Viewport, "glViewport"); GETW(o, ClearColor, "glClearColor");
+    GETW(o, Clear, "glClear"); GETW(o, Enable, "glEnable"); GETW(o, GenTextures, "glGenTextures");
+    GETW(o, BindTexture, "glBindTexture"); GETW(o, TexParameteri, "glTexParameteri");
+    GETW(o, TexImage2D, "glTexImage2D"); GETW(o, TexSubImage2D, "glTexSubImage2D");
+    GETW(o, PixelStorei, "glPixelStorei"); GETW(o, Begin, "glBegin"); GETW(o, End, "glEnd");
+    GETW(o, TexCoord2f, "glTexCoord2f"); GETW(o, Vertex2f, "glVertex2f"); GETW(u, GetDC, "GetDC");
+    GETW(g, ChoosePixelFormat, "ChoosePixelFormat"); GETW(g, SetPixelFormat, "SetPixelFormat");
+    GETW(g, SwapBuffers, "SwapBuffers");
+#undef GETW
+    return G.CreateContext && G.MakeCurrent && G.TexSubImage2D && G.GetDC && G.SetPixelFormat && G.SwapBuffers;
+}
+
+static DWORD WINAPI gl_thread(LPVOID unused)
+{
+    PIXELFORMATDESCRIPTOR pfd;
+    HDC dc;
+    HGLRC rc = 0;
+    unsigned tex;
+    int tw = 0, th = 0, fmt, cw = 0, ch = 0;
+    static u32 local[DS_W * DS_H * 2 * MAXS * MAXS];
+    (void)unused;
+    dc = G.GetDC(wnd);
+    memset(&pfd, 0, sizeof pfd);
+    pfd.nSize = sizeof pfd;
+    pfd.nVersion = 1;
+    pfd.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER;
+    pfd.iPixelType = PFD_TYPE_RGBA;
+    pfd.cColorBits = 32;
+    fmt = G.ChoosePixelFormat(dc, &pfd);
+    if (!fmt || !G.SetPixelFormat(dc, fmt, &pfd) || !(rc = G.CreateContext(dc)) || !G.MakeCurrent(dc, rc)) {
+        SetEvent(gl_ready);  /* gl_on stays 0: GDI */
+        return 0;
+    }
+    *(PROC *)&G.SwapIntervalEXT = G.GetProcAddress("wglSwapIntervalEXT");
+    if (G.SwapIntervalEXT)
+        G.SwapIntervalEXT(getenv("NDOGS_VSYNC") && !atoi(getenv("NDOGS_VSYNC")) ? 0 : 1);
+    G.Enable(GL_TEXTURE_2D);
+    G.GenTextures(1, &tex);
+    G.BindTexture(GL_TEXTURE_2D, tex);
+    G.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    G.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    G.ClearColor(0, 0, 0, 1);
+    gl_on = 1;
+    SetEvent(gl_ready);
+    for (;;) {
+        int x, y, w, h, nw, nh;
+        WaitForSingleObject(gl_event, 100);
+        EnterCriticalSection(&gl_lock);
+        if (gl_new) {
+            memcpy(local, gl_frame, (size_t)gl_w * gl_h * 4);
+            cw = gl_w;
+            ch = gl_h;
+            gl_new = 0;
+        }
+        LeaveCriticalSection(&gl_lock);
+        if (!cw)
+            continue;
+        for (nw = 1; nw < cw; nw <<= 1)
+            ;
+        for (nh = 1; nh < ch; nh <<= 1)
+            ;
+        if (nw != tw || nh != th) {  /* power-of-two texture holding the canvas in its top-left corner */
+            G.TexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, nw, nh, 0, GL_BGRA, GL_UNSIGNED_BYTE, 0);
+            tw = nw;
+            th = nh;
+        }
+        G.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter_linear ? GL_LINEAR : GL_NEAREST);
+        G.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter_linear ? GL_LINEAR : GL_NEAREST);
+        G.PixelStorei(GL_UNPACK_ROW_LENGTH, cw);
+        G.TexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, cw, ch, GL_BGRA, GL_UNSIGNED_BYTE, local);
+        G.Viewport(0, 0, win_w, win_h);
+        G.Clear(GL_COLOR_BUFFER_BIT);
+        fit(&x, &y, &w, &h);
+        G.Viewport(x, win_h - y - h, w, h);
+        {
+            float u = (float)cw / tw, v = (float)ch / th;
+            G.Begin(GL_QUADS);
+            G.TexCoord2f(0, 0); G.Vertex2f(-1, 1);
+            G.TexCoord2f(u, 0); G.Vertex2f(1, 1);
+            G.TexCoord2f(u, v); G.Vertex2f(1, -1);
+            G.TexCoord2f(0, v); G.Vertex2f(-1, -1);
+            G.End();
+        }
+        G.SwapBuffers(dc);
+    }
+    return 0;
+}
+
+static void gl_start(void)
+{
+    if (getenv("NDOGS_GL") && !atoi(getenv("NDOGS_GL")))
+        return;
+    if (!gl_load())
+        return;
+    InitializeCriticalSection(&gl_lock);
+    gl_event = CreateEventA(0, FALSE, FALSE, 0);
+    gl_ready = CreateEventA(0, TRUE, FALSE, 0);
+    CreateThread(0, 0, gl_thread, 0, 0, 0);
+    WaitForSingleObject(gl_ready, 2000);
+    if (!gl_on)
+        fprintf(stderr, "window: OpenGL unavailable, drawing with GDI\n");
+    else
+        fprintf(stderr, "window: OpenGL presenter, vsync %s\n", G.SwapIntervalEXT ? "on" : "unavailable");
+}
+
+/* hand the current canvas to the presenter */
+static void gl_submit(void)
+{
+    EnterCriticalSection(&gl_lock);
+    memcpy(gl_frame, pixels, (size_t)can_w * can_h * 4);
+    gl_w = can_w;
+    gl_h = can_h;
+    gl_new = 1;
+    LeaveCriticalSection(&gl_lock);
+    SetEvent(gl_event);
+}
 static int fullscreen;
 static RECT saved_rect;
 #define WSTYLE (WS_OVERLAPPEDWINDOW & ~WS_MAXIMIZEBOX)
@@ -247,7 +423,7 @@ static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
     case WM_KEYDOWN:
         if (wp == VK_F11 && !(lp & 0x40000000))
             toggle_fullscreen();
-        if (wp >= VK_F8 && wp <= VK_F10 && !(lp & 0x40000000)) {
+        if (wp >= VK_F7 && wp <= VK_F10 && !(lp & 0x40000000)) {
             fkey((int)(wp - VK_F1) + 1);
             W.InvalidateRect(h, 0, TRUE);
         }
@@ -266,6 +442,11 @@ static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
         PAINTSTRUCT ps;
         HDC dc = W.BeginPaint(h, &ps);
         BITMAPINFO bi;
+        if (gl_on) {  /* the presenter thread draws; just ask it to redraw (resize, uncover) */
+            W.EndPaint(h, &ps);
+            SetEvent(gl_event);
+            return 0;
+        }
         RECT r;
         int x, y, w, hh;
         fit(&x, &y, &w, &hh);
@@ -326,6 +507,7 @@ int window_open(int s)
     if (!load_ui())
         return 0;
     memset(&wc, 0, sizeof wc);
+    wc.style = CS_OWNDC;  /* the OpenGL context keeps the window's DC */
     wc.lpfnWndProc = wndproc;
     wc.hInstance = GetModuleHandleA(0);
     wc.hCursor = W.LoadCursorA(0, (LPCSTR)IDC_ARROW);
@@ -343,6 +525,7 @@ int window_open(int s)
     if (!wnd)
         return 0;
     W.ShowWindow(wnd, SW_SHOW);
+    gl_start();
     return 1;
 }
 
@@ -352,7 +535,10 @@ int window_present(const u32 *top, const u32 *bottom, int w, int h)
     if (!wnd)
         return 1;
     build_canvas(top, bottom, w, h);
-    W.InvalidateRect(wnd, 0, FALSE);
+    if (gl_on)
+        gl_submit();
+    else
+        W.InvalidateRect(wnd, 0, FALSE);
     while (W.PeekMessageA(&m, 0, 0, 0, PM_REMOVE)) {
         W.TranslateMessage(&m);
         W.DispatchMessageA(&m);
