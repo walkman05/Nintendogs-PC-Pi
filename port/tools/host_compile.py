@@ -234,7 +234,7 @@ def main():
             gen = os.path.join(OBJDIR, 'functab.c')
             subprocess.run([sys.executable, os.path.join(ROOT, 'port', 'tools', 'gen_functab.py'), gen], check=True)
             extras = [os.path.join(ROOT, 'port', 'src', x) for x in
-                      ('host_cpu.c', 'host_link.c', 'hw.c', 'hw_trap.c', 'hw_card.c', 'host_threads.c', 'vram.c', 'video.c', 'window.c', 'audio.c', 'snd.c', 'workers.c', 'gpu2d.c', 'gpu3d.c', 'platform_mem.c', 'loader.c', 'save.c', 'main.c')] + [gen]
+                      ('host_cpu.c', 'host_link.c', 'hw.c', 'hw_trap.c', 'hw_card.c', 'host_threads.c', 'vram.c', 'video.c', 'window.c', 'audio.c', 'snd.c', 'workers.c', 'gpu2d.c', 'gpu3d.c', 'platform_mem.c', 'loader.c', 'save.c', 'mic.c', 'main.c')] + [gen]
             extras = [x for x in extras if os.path.exists(x)] + [x for x in os.environ.get('NDOGS_EXTRA_SRC', '').split(';') if x]
             hf = os.path.join(ROOT, 'port', 'hostfuncs')
             extras += [os.path.join(hf, x) for x in sorted(os.listdir(hf)) if x.endswith('.c')]

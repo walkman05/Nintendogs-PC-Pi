@@ -208,6 +208,11 @@ default on; `--demo` restores the kiosk) lifts the gates behind `#ifdef NDOGS_PC
 - Kennel: Buy (func_0211c69c button 0, dropped in the demo) opens the kennel shop through the kept state-4 path;
   func_0211c964 no longer greys it out. func_0208b604 borrows a similar breed's shop icon if one is missing.
 - func_02099ffc: no kiosk reset (NIS_ResetTrial) after 2 minutes without input.
+- Microphone (needed to name a puppy): port/src/mic.c serves PXI channel 9 (hw.c collects each command's words).
+  Auto sampling (0x41: type bits 0 12-bit, 1 signed, 2 filter off, 4 loop; buffer, size, rate in 33.514 MHz cycles)
+  fills the game's ring buffer each VBlank with rate/60 samples and keeps the newest sample's address at
+  0x027fff90; one-shot (0x30) writes 0x027fff94. Source: the default recording device (Windows waveIn via winmm at
+  run time; silence elsewhere for now), NDOGS_MICWAV=<16-bit mono .wav>,<frame> for tests, NDOGS_NOMIC=1 none.
 - Mode values (`NDOGS_PTRWATCH=0215942c` logs changes): c000 door/title, 0xd kennel, 0x12 kennel Look (demo),
   0 Home, 17 end-of-demo scene (entered via func_020a8868 event 22 -> func_020a7d74; still open).
 - Save: the demo has no backup-memory code; the retail game's (CARD backup calls around 0x02096000-0x02097800 in

@@ -174,10 +174,20 @@ static void arm7_reply(u32 tag, u32 data)
  * bit 24. The ARM7 answers with bit 24, the command number in bits 8-14 and a result byte (0 = success).
  * Data the commands produce lives in shared memory (e.g. touch samples at 0x027fffaa, all "not touched" here). */
 static u32 spi_cmd[32];
+extern void mic_command(u32 cmd, const u16 *w);
 static void arm7_spi(u32 tag, u32 data)
 {
-    if (data & 0x2000000u)
+    static u16 words[16];  /* the microphone's command: start word's low byte, then each data word's payload */
+    if (data & 0x2000000u) {
         spi_cmd[tag] = (data >> 8) & 0x7f;
+        if (tag == 9) {
+            memset(words, 0, sizeof words);
+            words[0] = data & 0xff;
+        }
+    } else if (tag == 9 && ((data >> 16) & 0xff) < 16)
+        words[(data >> 16) & 0xff] = data & 0xffff;
+    if (tag == 9 && (data & 0x1000000u))
+        mic_command(spi_cmd[9], words);
     if (data & 0x1000000u)
         arm7_reply(tag, 0x1000000u | (spi_cmd[tag] << 8) | 0);
 }
@@ -735,6 +745,10 @@ static void audio_frame(void)
     acc -= n;
     snd_render(buf, n);
     audio_push(buf, n);
+    {
+        extern void mic_frame(void);
+        mic_frame();
+    }
 }
 
 /* Game time within a frame is wall time since the VBlank minus the host's own work in that time (rasterising,
