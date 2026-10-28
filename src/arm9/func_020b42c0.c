@@ -72,6 +72,6 @@ void func_020b42c0(u8 *param_1, s16 param_2, u8 *param_3)
         q = q + 20;
     } while (i < 3);
     func_0206c7d4(data_02159070, param_1 + 0x26b8, 0x4e38);
-    *(u16 *)((u32)param_1 + 0x74f0) = 2000;
+    *(u16 *)((u32)param_1 + 0x74f0) = NDOGS_R(0, 2000);
     func_02080d84(0x74f2 + param_1);
 }

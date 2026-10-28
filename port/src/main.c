@@ -22,6 +22,11 @@ extern void ndogs_game_main(void);
 
 static const char *stage = "start";
 int ndogs_full = 1;  /* full-game mode (see host_compat.h); --demo keeps the kiosk demo's restrictions */
+#ifdef NDOGS_RETAIL
+int ndogs_retail = 1;  /* the retail cartridge's numbering where the shared game code differs (host_compat.h) */
+#else
+int ndogs_retail = 0;
+#endif
 
 #ifdef _WIN32
 static LONG WINAPI on_fault(EXCEPTION_POINTERS *e)

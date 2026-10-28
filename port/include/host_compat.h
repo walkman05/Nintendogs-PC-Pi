@@ -21,6 +21,11 @@ static inline unsigned long long HostIoRead64(unsigned int addr)
 /* Full-game mode (port/src/main.c; default on, --demo turns it off): demo-only restrictions in the game code are
  * lifted behind `if (ndogs_full)`. */
 extern int ndogs_full;
+/* The retail build (host_compile.py --target retail) runs on the Dachshund & Friends cartridge, whose sound archive
+ * is renumbered (one sequence dropped, groups added). The game objects are shared by both exes, so the few
+ * functions retail changed for that pick their numbers at run time: NDOGS_R(retail value, demo value). */
+extern int ndogs_retail;
+#define NDOGS_R(retail, demo) (ndogs_retail ? (retail) : (demo))
 static inline void HostIoWrite64(unsigned int addr, unsigned long long value)
 {
     HostIoWrite32(addr, (unsigned int)value);

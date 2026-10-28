@@ -14,7 +14,7 @@ u32 func_0209d430(u8 *param_1, u32 param_2, u32 param_3)
         *(u16 *)(param_1 + 38) = *(u16 *)(param_1 + 38) | (1 << r4);
     }
     if (*(u32 *)((u8 *)&data_02159198 + 4) == 0 && *(u16 *)(param_1 + 36) == 75 && param_2 == 0) {
-        func_0209edc4(127);
+        func_0209edc4(NDOGS_R(126, 127));
     }
     return r4;
 }

@@ -968,6 +968,12 @@ static void player_prepare(int pn, u32 base, u32 off, u32 bank)
             fwrite(P(base), 1, 0x4000, f);
             fclose(f);
         }
+        snprintf(name, sizeof name, "bank_%08x.bin", bank);  /* and the bank it plays with */
+        if (mem_ok(bank, 0x40) && (f = fopen(name, "wb"))) {
+            fwrite(P(bank), 1, 0x40, f);
+            fclose(f);
+        }
+        fprintf(stderr, "prepare player %d seq %08x+%x bank %08x\n", pn, base, off, bank);
     }
     Player *p = &s_pl[pn];
     u32 pc = base + off, mask = 1;

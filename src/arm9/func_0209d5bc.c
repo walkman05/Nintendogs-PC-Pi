@@ -110,7 +110,7 @@ u32 func_0209d5bc(Obj *p, s16 param_2)
             func_02072d28(e->a0, heap);
             if (sVar1 != 255) {
                 func_02072cf0(e->a2, heap);
-                switch (sVar1) {
+                switch (NDOGS_R(sVar1 + 1, sVar1)) {  /* retail: sequence numbers from 58 up are one lower */
                 case 64:
                     data_02159144 = func_02071f78(heap, 0x9c4c, 0, 0, 0);
                     func_020e1d18();
@@ -155,7 +155,7 @@ u32 func_0209d5bc(Obj *p, s16 param_2)
                 }
                 if (e->a0 != 255) {
                     if (param_2 == 73 && func_0209aa18() == 0 && data_02159074.p30 == 0) {
-                        func_02072d28(96, heapB);
+                        func_02072d28(NDOGS_R(104, 96), heapB);
                         k = 1;
                     } else {
                         func_02072d28(e->a0, heapB);
@@ -193,18 +193,18 @@ u32 func_0209d5bc(Obj *p, s16 param_2)
                         func_020a355c(func_02071f78(heapB, func_020a3148(k), 0, 0, 0), k);
                     } else if (param_2 == 51 && (func_0209aa18() != 0 || data_02159074.p30 != 0)) {
                         s32 a = func_02071f78(heapB, 40960, 0, 0, 0);
-                        func_020e0364(a, func_0209aab0(), 146, 0, 10, 0);
+                        func_020e0364(a, func_0209aab0(), NDOGS_R(154, 146), 0, 10, 0);
                     }
                 }
                 if (sid != -1) {
-                    switch (e->a2) {
+                    switch (NDOGS_R(e->a2 >= 58 ? e->a2 + 1 : e->a2, e->a2)) {
                     case 8:
                     case 26:
                     case 32:
                     case 33:
                     case 127:
                         func_02072cf0(sid, heapB);
-                        func_020a0258(128);
+                        func_020a0258(NDOGS_R(127, 128));
                         break;
                     default:
                         if ((data_0212fd14 & (1u << mode)) == 0) {

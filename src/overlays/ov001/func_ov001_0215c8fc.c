@@ -75,7 +75,7 @@ void func_ov001_0215c8fc(void)
             data_ov001_0215e260->f2c = 1;
             data_ov001_0215e260->f10 = data_ov001_0215e260->count - 1;
             data_ov001_0215e260->next = 2;
-            func_020a2284(0x47, 2);
+            func_020a2284(NDOGS_R(0x4f, 0x47), 2);
             func_02108e24(0);
             func_02108e24(0);
         }
@@ -85,7 +85,7 @@ void func_ov001_0215c8fc(void)
                 data_ov001_0215e260->f30 = 1;
                 data_ov001_0215e260->f10 = data_ov001_0215e260->count + 1;
                 data_ov001_0215e260->next = 2;
-                func_020a2284(0x47, 3);
+                func_020a2284(NDOGS_R(0x4f, 0x47), 3);
                 func_02108e24(0);
                 func_02108e24(0);
             }

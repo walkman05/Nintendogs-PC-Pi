@@ -101,8 +101,14 @@ void func_0209b18c(u32 param_1)
         break;
     case 27:
         func_020a0e04(4);
-        func_0209fb38(0x7d, 0x7f, 0);
+        func_0209fb38(NDOGS_R(0x7c, 0x7d), 0x7f, 0);
         break;
+#ifdef NDOGS_PC
+    case 29:  /* retail only */
+        if (ndogs_retail)
+            func_0209fb38(0x17, 0x7f, 300);
+        break;
+#endif
     case 24:
         *(u32 *)((u8 *)&data_02159074 + 0x40) = 1;
         break;

@@ -21,7 +21,7 @@ void func_0209e534(s16 param_1)
     iVar1 = r12 << 8;
     ((Obj *)(u8 *)&data_02159198)->s30 = param_1;
     ((Obj *)(u8 *)&data_02159198)->s3c = iVar1 / 127;
-    func_0207307c((u8 *)&data_02159198, 0x41);
+    func_0207307c((u8 *)&data_02159198, NDOGS_R(0x40, 0x41));
     func_02070800((u8 *)&data_02159198, 15, ((Obj *)(u8 *)&data_02159198)->s30);
     ((Obj *)(u8 *)&data_02159198)->s40 = 1;
 }

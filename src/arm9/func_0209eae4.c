@@ -17,7 +17,7 @@ void func_0209eae4(int param_1)
     if (*(int *)(q + 0x2c) == 0) {
         return;
     }
-    if (func_020708d0(p) != 127) {
+    if (func_020708d0(p) != NDOGS_R(126, 127)) {
         return;
     }
     if (param_1 < 80) {

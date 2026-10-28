@@ -17,4 +17,7 @@ typedef int BOOL;
 #define TRUE 1
 #define FALSE 0
 #define NULL ((void *)0)
+#ifndef NDOGS_PC
+#define NDOGS_R(retail, demo) (demo)  /* the PC port's retail build picks the first (port/include/host_compat.h) */
+#endif
 #endif

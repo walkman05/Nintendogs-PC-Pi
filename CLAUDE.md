@@ -262,6 +262,15 @@ Status: the retail exe runs from the Dachshund & Friends ROM alone (first-run se
 breed list (Husky), buying, Home, saving, as on the demo build. Fixed on the way: func_020a457c called the
 trampoline func_0208ddac without the r0 it forwards (func_0208c3e0's result, the system.ini text): the demo build
 only worked because the stack slot happened to hold it.
+Sound: the retail sound archive drops demo sequence 58 (later sequences are one lower) and adds sound groups
+(e.g. 80-84 / 85-89 variants by a value system.ini sets at data_02159010+4; other groups +8). Shared code takes
+its numbers from tables in the (retail) data and is right; functions retail changed carry demo numbers as
+constants. Those pick the retail value at run time: `NDOGS_R(retail, demo)` (host_compat.h; `ndogs_retail` is set
+in the retail exe's main.c; ctx.h gives the DS build the demo value, so it stays identical) in func_0209af44,
+func_0209b18c (+ retail's case 29), func_0209c5b0, func_0209d430, func_0209d5bc, func_0209e534, func_0209eae4,
+func_020b42c0, func_020b9d98, func_ov001_0215c8fc. Found by diffing the immediates of every equal-size "similar"
+function (objdump of both builds) and the sound calls with literal numbers in the changed ones. Check: the door
+music is sample-identical to the demo build's; NDOGS_SNDLOG=2 logs notes and dumps each prepared sequence/bank.
 Next: decompile the changed / retail-only functions (the save code among them); drop the demo gates in a retail
 build.
 

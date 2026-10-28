@@ -37,7 +37,7 @@ void func_0209c5b0(s32 p1)
     *(u16 *)(data_02159148 + 2) = (u16)p1;
     func_0209ad94();
     func_02072d28(bVar1, piVar7);
-    if (bVar1 == 101) {
+    if (bVar1 == NDOGS_R(109, 101)) {
         iv3 = func_02071f78(*(s32 *)(data_02159074 + 4), 0x13950, 0, 0, 0);
         iv4 = func_0209aab0();
         func_020e0394(iv3, iv4, 78, 0, 13, 1);

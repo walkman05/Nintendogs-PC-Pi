@@ -382,7 +382,7 @@ void func_020b9d98(s16 *param_1)
     }
     case 0x14: {
         s32 t14;
-        func_020a1f14(0x46, 0);
+        func_020a1f14(NDOGS_R(0x4a, 0x46), 0);
         t14 = ST(0);
         if (t14 != 0) {
             param_1[0x8c] = 0x15;
