@@ -97,9 +97,43 @@ static void protect(u32 page, int open)
     VirtualProtect((void *)page, 0x1000, open ? PAGE_READWRITE : PAGE_NOACCESS, &old);
 }
 
+/* NDOGS_HWWATCH=<addr>: CPU data watchpoint (debug register 0) on a 4-byte word; each write is logged with the
+ * writer's call chain (debugging aid for memory the game corrupts). */
+static u32 hwwatch;
+static int hwwatch_hit(EXCEPTION_POINTERS *e)
+{
+    CONTEXT *c = e->ContextRecord;
+    u32 *fp = (u32 *)c->Ebp;
+    int k;
+    if (!(c->Dr6 & 1))
+        return 0;
+    c->Dr6 = 0;
+    fprintf(stderr, "hwwatch %08x = %08x at eip %08x <", hwwatch, *(u32 *)hwwatch, (u32)c->Eip);
+    for (k = 0; k < 10 && fp && !IsBadReadPtr(fp, 8); k++, fp = (u32 *)fp[0])
+        fprintf(stderr, " %08x", fp[1]);
+    fputc(10, stderr);
+    return 1;
+}
+
+static DWORD WINAPI hwwatch_arm(LPVOID thread)
+{
+    CONTEXT c;
+    SuspendThread((HANDLE)thread);
+    memset(&c, 0, sizeof c);
+    c.ContextFlags = CONTEXT_DEBUG_REGISTERS;
+    GetThreadContext((HANDLE)thread, &c);
+    c.Dr0 = hwwatch;
+    c.Dr7 = 1 | (1u << 16) | (3u << 18);  /* local enable, break on write, 4 bytes */
+    SetThreadContext((HANDLE)thread, &c);
+    ResumeThread((HANDLE)thread);
+    return 0;
+}
+
 static LONG CALLBACK on_exception(EXCEPTION_POINTERS *e)
 {
     EXCEPTION_RECORD *r = e->ExceptionRecord;
+    if (r->ExceptionCode == EXCEPTION_SINGLE_STEP && hwwatch && hwwatch_hit(e) && !pending.active)
+        return EXCEPTION_CONTINUE_EXECUTION;
     if (r->ExceptionCode == EXCEPTION_ACCESS_VIOLATION && r->NumberParameters >= 2) {
         u32 addr = (u32)r->ExceptionInformation[1];
         if (!trapped(addr) || pending.active)
@@ -148,6 +182,14 @@ int hw_trap_install(void)
     unsigned i;
     u32 p;
     AddVectoredExceptionHandler(1, on_exception);
+    if (getenv("NDOGS_HWWATCH")) {
+        HANDLE self, t;
+        hwwatch = (u32)strtoul(getenv("NDOGS_HWWATCH"), 0, 16) & ~3u;
+        DuplicateHandle(GetCurrentProcess(), GetCurrentThread(), GetCurrentProcess(), &self, 0, FALSE,
+                        DUPLICATE_SAME_ACCESS);
+        t = CreateThread(0, 0, hwwatch_arm, self, 0, 0);
+        WaitForSingleObject(t, INFINITE);
+    }
     for (i = 0; i < sizeof ranges / sizeof ranges[0]; i++)
         for (p = ranges[i].base; p < ranges[i].base + ranges[i].size; p += 0x1000)
             protect(p, 0);

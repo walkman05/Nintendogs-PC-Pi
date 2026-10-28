@@ -93,8 +93,15 @@ drawn yet (milestone 5).
   prints the busiest trapping instructions, resolve with addr2func.py; `NDOGS_STATUS=2` prints per-frame busy time
   and traps; `NDOGS_TRAPBENCH=1` times one trap and one host access.
 - 3D: textures/palettes are copied once per frame into flat arrays (vram_flatten) for the rasteriser.
-Status: 60 fps through the intro, title and the demo's attract scene (~5-8 ms per frame). Known bug: in the attract
-scene the dogs aren't drawn (their shadows are).
+- 3D debugging: `NDOGS_GXSTAT=1` prints per-second polygon fates (drawn/clipped/culled) and command counts;
+  `NDOGS_GXDUMP=<swap>` traces one frame's matrix commands, POLYGON_ATTR/TEXIMAGE writes with host call chains,
+  and its polygon list. `NDOGS_HWWATCH=<addr>` (Windows) logs every write to a RAM word with the writer's chain.
+Status: 60 fps through the intro, title and the demo's attract scene with the dogs (~9 ms per frame).
+
+Porting hazard: pass-through register arguments. A function that forwards r1-r3 untouched to a callee was
+sometimes decompiled with too few parameters (matching on the DS, garbage on the PC). func_0208f7d0 dropped the
+light flags for func_02077e04, which set the dogs' material to depth-test-equal and hid them. 134 functions are
+defined with fewer parameters than some caller passes (most are stubs that ignore them); not yet audited.
 
 ## Build
 ```

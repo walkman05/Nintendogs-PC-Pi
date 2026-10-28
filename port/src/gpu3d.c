@@ -299,6 +299,11 @@ static int clip_against(const vtx_t *in, int n, vtx_t *out, int axis, float sign
     return m;
 }
 
+/* NDOGS_GXSTAT=1 debugging: what happened to each polygon this frame */
+static int g_dump;
+int ndogs_dbg;  /* NDOGS_GXDUMP=<frame>: trace that frame's matrix commands and clipped vertices */
+static u32 st_far, st_clip, st_w, st_back, st_full, st_ok, st_vtx, st_cmd[256];
+
 static void emit_poly(const vtx_t *src, int n)
 {
     vtx_t b0[MAX_PV + 4], b1[MAX_PV + 4];
@@ -315,8 +320,10 @@ static void emit_poly(const vtx_t *src, int n)
         if (x > w || x < -w || y > w || y < -w || z > w || z < -w)
             need_clip = 1;
     }
-    if (far && !(attr & (1u << 12)))
+    if (far && !(attr & (1u << 12))) {
+        st_far++;
         return;
+    }
     memcpy(in, src, sizeof(vtx_t) * n);
     if (need_clip) {
         static const int axes[3] = { VX, VY, VZ };
@@ -329,19 +336,28 @@ static void emit_poly(const vtx_t *src, int n)
                 t = in; in = out; out = t;
             }
         }
-        if (n < 3)
+        if (n < 3) {
+            if (g_dump && st_clip < 0)
+                fprintf(stderr, "  clipped: v0 %.0f %.0f %.0f %.0f  v1 %.0f %.0f %.0f %.0f\n", src[0].f[VX], src[0].f[VY],
+                        src[0].f[VZ], src[0].f[VW], src[1].f[VX], src[1].f[VY], src[1].f[VZ], src[1].f[VW]);
+            st_clip++;
             return;
+        }
         if (n > MAX_PV)
             n = MAX_PV;
     }
-    if (L->npoly >= MAX_POLY)
+    if (L->npoly >= MAX_POLY) {
+        st_full++;
         return;
+    }
     p = &L->poly[L->npoly];
     for (i = 0; i < n; i++) {
         vtx_t *v = &p->v[i];
         float w = in[i].f[VW], iw, z;
-        if (w <= 0.0f)
+        if (w <= 0.0f) {
+            st_w++;
             return;
+        }
         iw = 1.0f / w;
         *v = in[i];
         v->f[VX] = (float)g_vp_x1 + (in[i].f[VX] * iw + 1.0f) * 0.5f * (float)g_vp_w;
@@ -359,11 +375,14 @@ static void emit_poly(const vtx_t *src, int n)
     }
     /* front face = counter-clockwise in view space (y up) = negative shoelace in y-down screen space */
     if (area < 0) {
-        if (!(attr & 0x80)) return;
+        if (!(attr & 0x80)) { st_back++; return; }
     } else if (area > 0) {
-        if (!(attr & 0x40)) return;
-    } else
+        if (!(attr & 0x40)) { st_back++; return; }
+    } else {
+        st_back++;
         return;
+    }
+    st_ok++;
     p->nv = n;
     p->attr = attr;
     p->tex = g_teximage;
@@ -394,6 +413,7 @@ static void add_vertex(s32 x, s32 y, s32 z)
     }
     if (!g_in_begin)
         return;
+    st_vtx++;
     v = &g_vbuf[g_nv++];
     v->f[VX] = (float)c[0];
     v->f[VY] = (float)c[1];
@@ -465,8 +485,48 @@ static void box_test(const u32 *p)
             g_box_result = 0;
 }
 
+static void dump_polys(const plist_t *L)
+{
+    int i;
+    for (i = 0; i < L->npoly; i++) {
+        const poly_t *q = &L->poly[i];
+        fprintf(stderr, "  poly %d: nv %d attr %08x tex %08x pal %04x tr %d y %.0f-%.0f x0 %.0f z0 %.0f w0 %.0f\n", i,
+                q->nv, q->attr, q->tex, q->pal, q->translucent, q->ymin, q->ymax, q->v[0].f[VX], q->v[0].f[VZ],
+                q->v[0].f[VW]);
+    }
+}
+
 static void do_swap(u32 p)
 {
+    if (g_dump)
+        dump_polys(&g_list[g_cur]);
+    static int gxstat = -1, frames;
+    if (gxstat < 0)
+        gxstat = getenv("NDOGS_GXSTAT") != 0;
+    ++frames;
+    if (gxstat && frames % 60 == 0) {
+        int c;
+        fprintf(stderr, "gx: %u vtx, polys ok %u far %u clipped %u w<=0 %u culled %u full %u | cmds", st_vtx, st_ok,
+                st_far, st_clip, st_w, st_back, st_full);
+        for (c = 0; c < 256; c++)
+            if (st_cmd[c])
+                fprintf(stderr, " %02x:%u", c, st_cmd[c]);
+        fprintf(stderr, "\n");
+    }
+    {
+        static int want = -2;
+        if (want == -2)
+            want = getenv("NDOGS_GXDUMP") ? atoi(getenv("NDOGS_GXDUMP")) : -1;
+        g_dump = frames == want;
+        {
+            extern int ndogs_dbg;
+            ndogs_dbg = g_dump;
+        }
+        if (g_dump)
+            fprintf(stderr, "gxdump frame %d:\n", frames);
+    }
+    st_far = st_clip = st_w = st_back = st_full = st_ok = st_vtx = 0;
+    memset(st_cmd, 0, sizeof st_cmd);
     g_list[g_cur].swapflags = p & 3;
     g_cur ^= 1;
     g_list[g_cur].npoly = 0;
@@ -476,6 +536,23 @@ static void do_swap(u32 p)
 
 static void exec_cmd(int cmd, const u32 *p)
 {
+    st_cmd[cmd & 255]++;
+    if (g_dump && (cmd == 0x29 || cmd == 0x2a)) {
+        u32 *fp = (u32 *)__builtin_frame_address(0);
+        int k;
+        fprintf(stderr, "  %s %08x <", cmd == 0x29 ? "ATTR" : "TEX", p[0]);
+        for (k = 0; k < 14 && fp; k++, fp = (u32 *)fp[0])
+            fprintf(stderr, " %08x", fp[1]);
+        fputc(10, stderr);
+    }
+    if (g_dump && cmd >= 0x10 && cmd <= 0x1c) {
+        int k, np = cmd == 0x16 || cmd == 0x18 ? 16 : cmd == 0x17 || cmd == 0x19 ? 12 : cmd == 0x1a ? 9 :
+                    cmd >= 0x1b ? 3 : 1;
+        fprintf(stderr, "  [ok %u clip %u back %u] cmd %02x mode %d:", st_ok, st_clip, st_back, cmd, g_mtx_mode);
+        for (k = 0; k < np; k++)
+            fprintf(stderr, " %d", (s32)p[k]);
+        fprintf(stderr, "\n");
+    }
     s32 m[16];
     int i;
     switch (cmd) {
