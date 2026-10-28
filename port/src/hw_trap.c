@@ -129,9 +129,32 @@ static DWORD WINAPI hwwatch_arm(LPVOID thread)
     return 0;
 }
 
+/* Builds with NDOGS_CFLAGS="-fsanitize=shift-exponent,integer-divide-by-zero -fsanitize-trap=all" put a ud2 where
+ * C would shift by >= the type width or divide by zero (x86 and ARM disagree there). Each such site is logged
+ * once with its caller, and execution continues after the ud2. */
+static int ub_hit(EXCEPTION_POINTERS *e)
+{
+    static u32 seen[512];
+    static int nseen;
+    u32 eip = (u32)e->ContextRecord->Eip, *fp = (u32 *)e->ContextRecord->Ebp;
+    int i;
+    if (IsBadReadPtr((void *)eip, 2) || ((u8 *)eip)[0] != 0x0f || ((u8 *)eip)[1] != 0x0b)
+        return 0;
+    for (i = 0; i < nseen && seen[i] != eip; i++)
+        ;
+    if (i == nseen && nseen < 512) {
+        seen[nseen++] = eip;
+        fprintf(stderr, "ub at %08x <%08x\n", eip, fp && !IsBadReadPtr(fp, 8) ? fp[1] : 0);
+    }
+    e->ContextRecord->Eip += 2;
+    return 1;
+}
+
 static LONG CALLBACK on_exception(EXCEPTION_POINTERS *e)
 {
     EXCEPTION_RECORD *r = e->ExceptionRecord;
+    if (r->ExceptionCode == EXCEPTION_ILLEGAL_INSTRUCTION && ub_hit(e))
+        return EXCEPTION_CONTINUE_EXECUTION;
     if (r->ExceptionCode == EXCEPTION_SINGLE_STEP && hwwatch && hwwatch_hit(e) && !pending.active)
         return EXCEPTION_CONTINUE_EXECUTION;
     if (r->ExceptionCode == EXCEPTION_ACCESS_VIOLATION && r->NumberParameters >= 2) {

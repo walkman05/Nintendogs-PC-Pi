@@ -14,6 +14,7 @@ FLAGS = ['-m32', '-std=gnu99', '-g1', '-fno-omit-frame-pointer', '-fwrapv', '-fn
 # game code optimisation (NDOGS_OPT, default -O0: -O1 exposes undefined behaviour in the decompiled C); the renderers always build at -O2
 GAME_OPT = os.environ.get('NDOGS_OPT', '-O0')
 FAST_SRC = ('gpu2d.c', 'gpu3d.c', 'video.c', 'vram.c', 'window.c', 'audio.c', 'snd.c', 'workers.c')
+FLAGS += os.environ.get('NDOGS_CFLAGS', '').split()  # extra flags, e.g. sanitizer checks for a test build
 DATA_RE = re.compile(r'\b(?:data|bss)_(?:ov[0-9]+_)?([0-9a-f]{8})(?:__\d+)?\b')
 OBJDIR = None
 

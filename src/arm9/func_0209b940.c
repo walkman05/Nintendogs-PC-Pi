@@ -100,7 +100,12 @@ void func_0209b940(s32 *param_1, s32 *param_2)
             if (*piVar10 == 0) goto L3e0;
             iVar7 = -1;
             if (data_0214f464 != 0) iVar7 = func_02044c8c();
+#ifdef NDOGS_PC
+            /* ARM gives 0 for shifts of 32 or more; x86 wraps the count */
+            if (((uVar12 < 32 ? 1u << uVar12 : 0) & 0x0e460007) != 0) {
+#else
             if ((1u << uVar12 & 0x0e460007) != 0) {
+#endif
                 iVar9 = data_0212fd18[*(u16 *)((u8 *)param_1 + 0x26)];
             } else {
                 iVar9 = 127;

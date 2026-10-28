@@ -108,6 +108,11 @@ drawn yet (milestone 5).
 Status: boots, knocks, reaches the Kennel menu (Buy/Look) and the Home gameplay screen with the three dogs at 60 fps
 (~10 ms per frame).
 
+Porting hazard checks done: a UB-trap build (`NDOGS_CFLAGS="-fsanitize=shift-exponent,integer-divide-by-zero
+-fsanitize-trap=all"`, separate objdir; hw_trap.c logs each trap site once and continues) found one shift >= 32
+in 90 s of gameplay (func_0209b940, fixed). Checked and fine: char signedness (mwcc -char signed), 64-bit struct
+alignment, the game-logic inline-asm replacements, FX_Div/FX_Inv host routines.
+
 Porting hazard: pass-through register arguments. A function that forwards r1-r3 untouched to a callee was
 sometimes decompiled with too few parameters (matching on the DS, garbage on the PC). func_0208f7d0 dropped the
 light flags for func_02077e04, which set the dogs' material to depth-test-equal and hid them. `port/tools/argscan.py`
