@@ -10,8 +10,18 @@ extern s32 *func_0208122c(s32 a, s32 b, s32 *c);
 
 #define FX_Mul(a, b) ((s32)(((s64)(a) * (s64)(b) + 0x800) >> 12))
 
+#ifdef NDOGS_PC /* NDOGS_PC: widened parameter 2: the DS callee uses the whole register */
+#ifdef NDOGS_PC /* NDOGS_PC: widened parameter 3: the DS callee uses the whole register */
+s32 func_02009444(u8 *param_1, s32 param_2, u32 param_3, u32 param_4, s32 param_5, s16 param_6, u32 *param_7, s32 *param_8, u32 param_9)
+{
+#else
+s32 func_02009444(u8 *param_1, s32 param_2, u32 param_3, u8 param_4, s32 param_5, s16 param_6, u32 *param_7, s32 *param_8, u32 param_9)
+{
+#endif
+#else
 s32 func_02009444(u8 *param_1, s32 param_2, u8 param_3, u8 param_4, s32 param_5, s16 param_6, u32 *param_7, s32 *param_8, u32 param_9)
 {
+#endif
     s32 iVar7;
     s32 *piVar3;
     u8 *iVar10;

@@ -235,9 +235,14 @@ static inline void SetOBJEffect(GXOamAttr *oam, u32 effect, int rsParam)
     }
 }
 
+#ifdef NDOGS_PC /* NDOGS_PC: widened parameter 1: the DS callee uses the whole register */
+u16 func_020738bc(GXOamAttr *pDstOams, u32 numDstOams, const NNSG2dCellData *pCell, const MtxFx22 *pMtxSR, const NNSG2dFVec2 *pBaseTrans, u16 affineIndex, BOOL bDoubleAffine)
+{
+#else
 u16 func_020738bc(GXOamAttr *pDstOams, u16 numDstOams, const NNSG2dCellData *pCell, const MtxFx22 *pMtxSR,
                   const NNSG2dFVec2 *pBaseTrans, u16 affineIndex, BOOL bDoubleAffine)
 {
+#endif
     u16 i;
     NNSG2dFVec2 objTrans;
     GXOamAttr *pDstOam;

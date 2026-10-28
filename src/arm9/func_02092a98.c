@@ -1,8 +1,13 @@
 #include "ctx.h"
 extern u8 *data_02159034;
 extern void func_0206c7bc(u16 a, u8 *b, u32 c);
+#ifdef NDOGS_PC /* NDOGS_PC: widened parameter 0: the DS callee uses the whole register */
+void func_02092a98(s32 param_1)
+{
+#else
 void func_02092a98(s16 param_1)
 {
+#endif
     u8 *iVar1;
     vu16 loc;
     iVar1 = *(u8 **)(data_02159034 + 0x1000 + 0x434);

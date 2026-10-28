@@ -11,8 +11,13 @@ extern void func_020942c0(s16 *p, u32 n);
 
 static inline void SwapByte(u32 v, vu8 *p) { *p = v; }
 
+#ifdef NDOGS_PC /* NDOGS_PC: widened parameter 3: the DS callee uses the whole register */
+u32 func_02093374(u32 *p1, u8 *p2, s32 p3, u32 p4)
+{
+#else
 u32 func_02093374(u32 *p1, u8 *p2, s32 p3, u8 p4)
 {
+#endif
     u32 r5;
     s16 i;
     s16 j;

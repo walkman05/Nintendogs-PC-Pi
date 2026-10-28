@@ -7,8 +7,13 @@ extern void func_02088364(void *a);
 extern void func_02006700(int a, void *b);
 extern void func_0208d284(void);
 
+#ifdef NDOGS_PC /* NDOGS_PC: widened parameter 1: the DS callee uses the whole register */
+void func_0208d1a0(int *param_1, s32 param_2)
+{
+#else
 void func_0208d1a0(int *param_1, s16 param_2)
 {
+#endif
     u16 w;
     s16 *psVar1;
     int iVar5;

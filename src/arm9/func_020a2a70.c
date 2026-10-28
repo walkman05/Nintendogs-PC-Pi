@@ -8,8 +8,13 @@ extern Pair data_02159328[16];
 extern s32 func_020df0d4(void);
 extern void func_020a2c24(void);
 
+#ifdef NDOGS_PC /* NDOGS_PC: widened parameter 0: the DS callee uses the whole register */
+void func_020a2a70(u32 param_1, s32 param_2)
+{
+#else
 void func_020a2a70(u16 param_1, s32 param_2)
 {
+#endif
     Mgr *m = &data_02159324;
     Pair *t = data_02159328;
     s32 prev;

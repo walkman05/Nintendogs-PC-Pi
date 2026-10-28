@@ -3,8 +3,13 @@
 extern s32 data_0214f464;
 extern s32 data_0213b578;
 
+#ifdef NDOGS_PC /* NDOGS_PC: widened parameter 2: the DS callee uses the whole register */
+void func_02039a28(u8 *p, s32 ch, s32 v, s16 w, s16 p5, u16 p6)
+{
+#else
 void func_02039a28(u8 *p, s32 ch, s16 v, s16 w, s16 p5, u16 p6)
 {
+#endif
     u32 iv = (u32)p + (u32)ch * 2;
     s32 cur = *(s16 *)(iv + 256 + 82);
     u16 f;

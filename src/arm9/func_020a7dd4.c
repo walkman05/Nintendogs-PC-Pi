@@ -19,8 +19,18 @@ typedef struct {
 extern Obj *data_0215942c;
 extern void func_020a85c4(Obj *obj, u32 n);
 
+#ifdef NDOGS_PC /* NDOGS_PC: widened parameter 1: the DS callee uses the whole register */
+#ifdef NDOGS_PC /* NDOGS_PC: widened parameter 2: the DS callee uses the whole register */
+void func_020a7dd4(u32 *param_1, u32 param_2, u32 param_3)
+{
+#else
+void func_020a7dd4(u32 *param_1, u32 param_2, u16 param_3)
+{
+#endif
+#else
 void func_020a7dd4(u32 *param_1, u16 param_2, u16 param_3)
 {
+#endif
     Obj *puVar5;
     s16 sVar2;
     u32 uVar4;

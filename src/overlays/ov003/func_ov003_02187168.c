@@ -16,8 +16,13 @@ extern s32 func_020aaf38(s32 a, void *b, s32 c);
 typedef struct { s32 v[3]; } T3;
 
 
+#ifdef NDOGS_PC /* NDOGS_PC: widened parameter 1: the DS callee uses the whole register */
+u32 func_ov003_02187168(u8 *param_1, s32 param_2, s16 param_3)
+{
+#else
 u32 func_ov003_02187168(u8 *param_1, s16 param_2, s16 param_3)
 {
+#endif
     u8 *iVar5p;
     s32 off;
     s32 blk[3];

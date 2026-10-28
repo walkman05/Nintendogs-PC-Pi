@@ -3,8 +3,13 @@
 extern u16 *data_0215942c;
 extern void func_020a85c4(u16 *p, u32 v);
 
+#ifdef NDOGS_PC /* NDOGS_PC: widened parameter 1: the DS callee uses the whole register */
+void func_020a8070(u32 *param_1, u32 param_2)
+{
+#else
 void func_020a8070(u32 *param_1, u16 param_2)
 {
+#endif
     s32 iVar2;
     u16 *puVar1;
     u16 *puVar3;

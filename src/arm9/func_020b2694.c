@@ -20,8 +20,13 @@ static inline s32 MinToHund(s32 x)
     return h;
 }
 
+#ifdef NDOGS_PC /* NDOGS_PC: widened parameter 1: the DS callee uses the whole register */
+s32 func_020b2694(u8 *p, s32 param_2, s32 param_3)
+{
+#else
 s32 func_020b2694(u8 *p, s16 param_2, s32 param_3)
 {
+#endif
     s32 vp2;
     s32 local_28;
     s32 iVar9;

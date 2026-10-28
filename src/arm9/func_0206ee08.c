@@ -9,8 +9,13 @@ typedef struct {
 
 extern void func_0206c9b8(void *dst, void *src, u32 n);
 
+#ifdef NDOGS_PC /* NDOGS_PC: widened parameter 1: the DS callee uses the whole register */
+u32 func_0206ee08(u8 *param_1, u32 param_2, u32 param_3, u32 param_4, u32 param_5)
+{
+#else
 u32 func_0206ee08(u8 *param_1, u16 param_2, u32 param_3, u32 param_4, u32 param_5)
 {
+#endif
     Hdr h;
     u8 *p;
 

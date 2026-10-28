@@ -5,8 +5,13 @@ void func_0208f5c4(u8 *p, s32 v);
 void func_0208f544(u8 *p, void *fn);
 void func_ov019_0215c000(void);
 
+#ifdef NDOGS_PC /* NDOGS_PC: widened parameter 1: the DS callee uses the whole register */
+u8 *func_ov019_0215cbd0(u32 *param_1, u32 param_2)
+{
+#else
 u8 *func_ov019_0215cbd0(u32 *param_1, u16 param_2)
 {
+#endif
     u8 *puVar2;
 
     puVar2 = func_020038b8(param_1, 196);

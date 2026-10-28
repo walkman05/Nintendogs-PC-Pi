@@ -13,8 +13,13 @@ extern u32 data_0215ad40;
 extern u32 func_0206fbc8(u32 a);
 extern s32 func_0206fb04(u32 a, u32 b, s32 *c, s32 *d);
 
+#ifdef NDOGS_PC /* NDOGS_PC: widened parameter 0: the DS callee uses the whole register */
+u32 func_020d740c(u32 param_1)
+{
+#else
 u32 func_020d740c(u8 param_1)
 {
+#endif
     s32 s0;
     s32 s1;
     u32 u;

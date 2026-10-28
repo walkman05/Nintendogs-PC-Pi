@@ -44,8 +44,13 @@ static inline s32 RandLerp(s32 start, s32 end)
 
 #define FX_DEG_TO_IDX(deg) ((s16)((((s64)(deg) * 0xb60b60b60bLL) + 0x80000000000LL) >> 44))
 
+#ifdef NDOGS_PC /* NDOGS_PC: widened parameter 1: the DS callee uses the whole register */
+void func_020d9484(Obj *p, u32 state)
+{
+#else
 void func_020d9484(Obj *p, u8 state)
 {
+#endif
     p->state = state;
     if (*(u16 *)(data_02159428 + 6) != 18) {
         switch (p->state) {

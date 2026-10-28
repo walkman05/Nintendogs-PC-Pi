@@ -31,8 +31,13 @@ static inline s32 mulr(s32 k, s32 x)
     return (s32)(u32)(v >> 12);
 }
 
+#ifdef NDOGS_PC /* NDOGS_PC: widened parameter 1: the DS callee uses the whole register */
+void func_ov003_02189740(u8 *param_1, s32 param_2)
+{
+#else
 void func_ov003_02189740(u8 *param_1, s16 param_2)
 {
+#endif
     s32 bVar2;
     s32 iVar3;
     s32 iVar4;

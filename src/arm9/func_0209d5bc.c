@@ -56,8 +56,13 @@ void func_020e0db0(s32 a, s32 b, s32 c, s32 d, s32 e);
 void func_020e0364(s32 a, s32 b, s32 c, s32 d, s32 e, s32 f);
 void func_02070b48(void *p);
 
+#ifdef NDOGS_PC /* NDOGS_PC: widened parameter 1: the DS callee uses the whole register */
+u32 func_0209d5bc(Obj *p, s32 param_2)
+{
+#else
 u32 func_0209d5bc(Obj *p, s16 param_2)
 {
+#endif
     s16 i;
     s16 sVar1;
     s32 *heapB;

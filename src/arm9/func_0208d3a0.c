@@ -7,8 +7,13 @@ extern s32 func_02088014(u32 *a, u8 *b);
 extern u32 *func_02003860(u32 *a, u32 b, u32 c);
 extern void func_02087ea0(u32 *a, u32 b, u32 c);
 
+#ifdef NDOGS_PC /* NDOGS_PC: widened parameter 1: the DS callee uses the whole register */
+u32 func_0208d3a0(u8 *param_1, u32 param_2, s32 param_3, u32 param_4)
+{
+#else
 u32 func_0208d3a0(u8 *param_1, u16 param_2, s32 param_3, u32 param_4)
 {
+#endif
     u32 *puVar10;
     s32 local_70;
     u32 *piVar3;

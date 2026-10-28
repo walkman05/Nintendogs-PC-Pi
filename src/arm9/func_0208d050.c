@@ -13,8 +13,13 @@ typedef struct {
     u32 c[2];
 } Row;
 
+#ifdef NDOGS_PC /* NDOGS_PC: widened parameter 3: the DS callee uses the whole register */
+u8 *func_0208d050(s32 *param_1, s32 *param_2, u32 param_3, u32 param_4)
+{
+#else
 u8 *func_0208d050(s32 *param_1, s32 *param_2, u32 param_3, u16 param_4)
 {
+#endif
     u8 *puVar1;
     s32 iVar3;
     s32 iVar5;

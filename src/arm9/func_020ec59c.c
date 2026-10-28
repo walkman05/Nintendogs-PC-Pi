@@ -19,8 +19,13 @@ static inline void SwapStore(u32 v, vu8 *p)
     *(u8 *)(p) = (u8)(v);
 }
 
+#ifdef NDOGS_PC /* NDOGS_PC: widened parameter 1: the DS callee uses the whole register */
+s32 func_020ec59c(s32 param_1, u32 param_2)
+{
+#else
 s32 func_020ec59c(s32 param_1, u16 param_2)
 {
+#endif
     Loc loc;
     s32 r;
     u32 tv;

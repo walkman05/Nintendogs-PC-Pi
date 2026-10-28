@@ -124,8 +124,13 @@ static inline s32 Finish(Dog *p1, s32 next)
 }
 
 
+#ifdef NDOGS_PC /* NDOGS_PC: widened parameter 3: the DS callee uses the whole register */
+BOOL func_02049304(Dog *p1, u32 *p2, s32 p3, s32 p4, s16 p5, s32 next)
+{
+#else
 BOOL func_02049304(Dog *p1, u32 *p2, s32 p3, s16 p4, s16 p5, s32 next)
 {
+#endif
     Obj *obj;
     s32 dist;
     s32 dir;

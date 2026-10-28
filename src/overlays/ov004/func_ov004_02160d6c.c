@@ -152,8 +152,18 @@ static inline BOOL TileFree(u8 x, u8 y, s32 cnt)
     return TRUE;
 }
 
+#ifdef NDOGS_PC /* NDOGS_PC: widened parameter 2: the DS callee uses the whole register */
+#ifdef NDOGS_PC /* NDOGS_PC: widened parameter 3: the DS callee uses the whole register */
+void func_ov004_02160d6c(u8 *px, u8 *py, u32 tx, u32 ty)
+{
+#else
+void func_ov004_02160d6c(u8 *px, u8 *py, u32 tx, u8 ty)
+{
+#endif
+#else
 void func_ov004_02160d6c(u8 *px, u8 *py, u8 tx, u8 ty)
 {
+#endif
     s32 dx;
     s32 dy;
     s32 sx;

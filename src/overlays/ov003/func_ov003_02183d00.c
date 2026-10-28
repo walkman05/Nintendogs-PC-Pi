@@ -20,8 +20,13 @@ static inline u8 SwapByte(u32 v, vu8 *p) { u8 old; *(u8 *)(p) = (u8)(v); return 
 
 #define FXM(a, b) ((s32)(((s64)(s32)(a) * (s64)(s32)(b) + 0x800) >> 12))
 
+#ifdef NDOGS_PC /* NDOGS_PC: widened parameter 2: the DS callee uses the whole register */
+void func_ov003_02183d00(u8 *param_1, u32 param_2, u32 param_3, u32 param_4)
+{
+#else
 void func_ov003_02183d00(u8 *param_1, u32 param_2, u16 param_3, u32 param_4)
 {
+#endif
     s32 iVar2, iVar3;
 
     func_02024ff0(param_1, param_4);

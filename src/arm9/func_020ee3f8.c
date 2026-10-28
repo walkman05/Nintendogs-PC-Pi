@@ -80,8 +80,13 @@ extern s32 func_02085c30(H16 h, s32 b);
 extern s32 func_0209e148(s32 a);
 extern void func_02097b94(s32 a, s32 b, s32 c, s32 d, s32 e);
 
+#ifdef NDOGS_PC /* NDOGS_PC: widened parameter 2: the DS callee uses the whole register */
+void func_020ee3f8(Dog *d, u8 *param_2, u32 param_3)
+{
+#else
 void func_020ee3f8(Dog *d, u8 *param_2, u8 param_3)
 {
+#endif
     u8 *pb;
     u8 buf[64];
     Obj *P;

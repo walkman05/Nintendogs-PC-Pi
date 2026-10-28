@@ -6,8 +6,18 @@ extern void func_02007c88(void);
 extern void func_02007d24(void);
 extern void func_02069f94(u16 *p, u32 a, u32 b);
 
+#ifdef NDOGS_PC /* NDOGS_PC: widened parameter 1: the DS callee uses the whole register */
+#ifdef NDOGS_PC /* NDOGS_PC: widened parameter 2: the DS callee uses the whole register */
+void func_02007624(u16 *param_1, u32 param_2, u32 param_3, u16 param_4)
+{
+#else
+void func_02007624(u16 *param_1, u32 param_2, u16 param_3, u16 param_4)
+{
+#endif
+#else
 void func_02007624(u16 *param_1, u16 param_2, u16 param_3, u16 param_4)
 {
+#endif
     int iVar8;
     s32 r;
     s32 t;

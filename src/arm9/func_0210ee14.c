@@ -5,8 +5,13 @@ void func_0210f038(void);
 
 typedef struct { u32 w[8]; } Ent;
 
+#ifdef NDOGS_PC /* NDOGS_PC: widened parameter 2: the DS callee uses the whole register */
+s32 func_0210ee14(s32 param_1, u32 *param_2, u32 param_3)
+{
+#else
 s32 func_0210ee14(s32 param_1, u32 *param_2, u16 param_3)
 {
+#endif
     u8 *puVar5;
     u16 count;
     s16 key;

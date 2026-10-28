@@ -39,8 +39,23 @@ static inline s32 CP_GetDivResult32(void)
     return (s32)reg_CP_DIV_RESULT_L;
 }
 
+#ifdef NDOGS_PC /* NDOGS_PC: widened parameter 1: the DS callee uses the whole register */
+#ifdef NDOGS_PC /* NDOGS_PC: widened parameter 2: the DS callee uses the whole register */
+#ifdef NDOGS_PC /* NDOGS_PC: widened parameter 3: the DS callee uses the whole register */
+u32 func_020012ac(Out *out, u32 x1, u32 y1, u32 u1, u16 v1, u16 x2, u16 y2, u16 u2, u16 v2)
+{
+#else
+u32 func_020012ac(Out *out, u32 x1, u32 y1, u16 u1, u16 v1, u16 x2, u16 y2, u16 u2, u16 v2)
+{
+#endif
+#else
+u32 func_020012ac(Out *out, u32 x1, u16 y1, u16 u1, u16 v1, u16 x2, u16 y2, u16 u2, u16 v2)
+{
+#endif
+#else
 u32 func_020012ac(Out *out, u16 x1, u16 y1, u16 u1, u16 v1, u16 x2, u16 y2, u16 u2, u16 v2)
 {
+#endif
     u32 irq;
     s32 r;
     s32 dy, dv;

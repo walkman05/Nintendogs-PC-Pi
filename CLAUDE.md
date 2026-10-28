@@ -137,6 +137,11 @@ Differential testing against the original ARM code (Unicorn: `pip install unicor
   writes or its address is taken (listed as REVIEW): 80 files widened, plus 7 where the declaration sits inside a
   multi-line macro (func_020cac38/cae5c/cb080/cb7f4/cbc3c/cc084/cc4cc: an NDOGS_RECV16 type alias). The 8 REVIEW
   sites were checked by hand: their callees return values that fit (0/1 flags, a u16 global, an atan2 angle in u16).
+- Narrow parameters, the mirror image: a function defined with an s8/u8/s16/u16 parameter that callers declare
+  (and pass) as 32 bits. On x86 the callee narrows; on the DS it narrows only if its code does.
+  `port/tools/paramscan.py` checks each such parameter (r0-r3) in the original callee: if it uses the full register
+  (arithmetic, compare, logic, addressing; byte/halfword stores don't count) the parameter is widened under
+  NDOGS_PC (`--apply`): 139 parameters in 108 files.
 - Captures include the I/O register page (e.g. POWCNT, which the game reads for the screen swap) as replay input;
   capdiff aligns traces (ARM traces also show recursion and helpers the host calls directly) and resumes at the
   ARM original when execution lands on an unaligned host function. In the whistle/jump-at-camera scenario all 37

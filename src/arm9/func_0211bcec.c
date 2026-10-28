@@ -4,8 +4,13 @@ typedef struct { u32 w[8]; } E8;
 
 extern E8 data_0214b3a4[];
 
+#ifdef NDOGS_PC /* NDOGS_PC: widened parameter 2: the DS callee uses the whole register */
+s32 func_0211bcec(E8 *out, u32 unused, u32 mask)
+{
+#else
 s32 func_0211bcec(E8 *out, u32 unused, u16 mask)
 {
+#endif
     E8 *e = data_0214b3a4;
     s32 n = 0;
     s16 s = *(s16 *)((u8 *)e + 4);

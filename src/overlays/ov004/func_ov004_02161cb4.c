@@ -85,8 +85,18 @@ static inline u16 GetBgTile(u8 x, u8 y)
 static inline u16 GetScr(u8 x, u8 y) { return data_ov004_02170320->sub->scr[ScrOffsetW(x, y) >> 1]; }
 static inline s32 FindT(u16 t) { s32 i; for (i = 0; i < 29; i++) { if (t == data_ov004_02170320->tiles[i]) return i; } return 0; }
 
+#ifdef NDOGS_PC /* NDOGS_PC: widened parameter 0: the DS callee uses the whole register */
+#ifdef NDOGS_PC /* NDOGS_PC: widened parameter 1: the DS callee uses the whole register */
+void func_ov004_02161cb4(u32 x, u32 y)
+{
+#else
+void func_ov004_02161cb4(u32 x, u8 y)
+{
+#endif
+#else
 void func_ov004_02161cb4(u8 x, u8 y)
 {
+#endif
     s32 i;
     s32 nx;
     s32 ny;

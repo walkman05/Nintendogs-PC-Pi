@@ -11,8 +11,18 @@ extern void func_0206fd5c(void);
 extern void func_0206fd1c(s32 a);
 extern void func_0206fd2c(s32 a);
 
+#ifdef NDOGS_PC /* NDOGS_PC: widened parameter 0: the DS callee uses the whole register */
+#ifdef NDOGS_PC /* NDOGS_PC: widened parameter 1: the DS callee uses the whole register */
+void func_0206f448(s32 param_1, s32 param_2, u32 param_3)
+{
+#else
+void func_0206f448(s32 param_1, s16 param_2, u32 param_3)
+{
+#endif
+#else
 void func_0206f448(s16 param_1, s16 param_2, u32 param_3)
 {
+#endif
     u32 local_b0[39];
     u8 *puVar1;
     s32 iVar2;

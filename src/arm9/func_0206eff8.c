@@ -2,8 +2,13 @@
 
 extern void func_0206c9b8(void *dst, void *src, u32 n);
 
+#ifdef NDOGS_PC /* NDOGS_PC: widened parameter 1: the DS callee uses the whole register */
+u32 func_0206eff8(u8 *p, u32 b, u32 c, u32 d, u32 e, u32 f, ...)
+{
+#else
 u32 func_0206eff8(u8 *p, u16 b, u32 c, u32 d, u32 e, u32 f, ...)
 {
+#endif
     u8 *base;
     u8 *q;
     u8 buf[4];

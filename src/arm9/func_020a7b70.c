@@ -7,8 +7,13 @@ typedef struct { u8 pad0[4]; u16 st; u8 pad1[8]; s16 cur; u8 pad2[12]; s16 nxt; 
 
 void func_020a85c4(u8 *p, s32 v);
 
+#ifdef NDOGS_PC /* NDOGS_PC: widened parameter 0: the DS callee uses the whole register */
+void func_020a7b70(u32 param_1, s32 param_2)
+{
+#else
 void func_020a7b70(u16 param_1, s32 param_2)
 {
+#endif
     s16 sVar1;
     G *g;
     Ent *e;

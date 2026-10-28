@@ -25,8 +25,13 @@ extern s32 func_0206fbc8(u16 v);
 extern BOOL func_0206fb04(s32 id, s32 lang, s32 *a, s32 *b);
 extern void func_02005e78(u8 x, u8 y, const char *fmt, ...);
 
+#ifdef NDOGS_PC /* NDOGS_PC: widened parameter 0: the DS callee uses the whole register */
+u32 func_ov007_0215e4a4(u32 line)
+{
+#else
 u32 func_ov007_0215e4a4(u8 line)
 {
+#endif
     s32 a;
     s32 b;
     s32 i;

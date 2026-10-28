@@ -10,8 +10,13 @@ static inline u8 SwapByte(u32 v, vu8 *p)
     return old;
 }
 
+#ifdef NDOGS_PC /* NDOGS_PC: widened parameter 1: the DS callee uses the whole register */
+void func_0208f5c4(u8 *param_1, u32 param_2)
+{
+#else
 void func_0208f5c4(u8 *param_1, u8 param_2)
 {
+#endif
     u32 z;
     SwapByte(param_2, (vu8 *)param_1);
     z = 0;

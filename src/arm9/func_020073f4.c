@@ -4,8 +4,23 @@ extern u8 *func_020038b8(s32 *p, s32 n);
 extern void func_0206c7bc(u16 a, u8 *b, s32 c);
 extern void func_020864fc(u32 *a, u8 *b, u32 c, u32 d, s16 e, s32 f);
 
+#ifdef NDOGS_PC /* NDOGS_PC: widened parameter 1: the DS callee uses the whole register */
+#ifdef NDOGS_PC /* NDOGS_PC: widened parameter 2: the DS callee uses the whole register */
+#ifdef NDOGS_PC /* NDOGS_PC: widened parameter 3: the DS callee uses the whole register */
+u32 *func_020073f4(s32 *param_1, u32 param_2, u32 param_3, s32 param_4)
+{
+#else
+u32 *func_020073f4(s32 *param_1, u32 param_2, u32 param_3, s16 param_4)
+{
+#endif
+#else
+u32 *func_020073f4(s32 *param_1, u32 param_2, u16 param_3, s16 param_4)
+{
+#endif
+#else
 u32 *func_020073f4(s32 *param_1, u16 param_2, u16 param_3, s16 param_4)
 {
+#endif
     u32 uVar1;
     u32 uVar2;
     s32 iVar5;

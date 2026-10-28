@@ -55,8 +55,13 @@ static inline void GXS_DispOff(void)
     *(vu32 *)0x04001000 &= ~0x10000;
 }
 
+#ifdef NDOGS_PC /* NDOGS_PC: widened parameter 2: the DS callee uses the whole register */
+void func_0200246c(u32 trigger, u32 logic, u32 keyPattern)
+{
+#else
 void func_0200246c(u32 trigger, u32 logic, u16 keyPattern)
 {
+#endif
     BOOL prepIrq;
     OSIntrMode prepIntrMode;
     OSIrqMask prepIntrMask;
