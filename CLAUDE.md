@@ -203,7 +203,10 @@ default on; `--demo` restores the kiosk) lifts the gates behind `#ifdef NDOGS_PC
 - Data: `python port/tools/make_full_rom.py --demo baserom.nds --retail <Dachshund & Friends (E).nds>` builds
   `extracted/host/full.nds` (+ `full_header.bin`): the demo ROM with every message file rebuilt in the demo's layout
   with the retail text by message ID (message ends found by walking 0x1a control codes, which can hold zero
-  halfwords), and the retail-only files appended. The demo's directory/file order (file IDs) is kept and the image
+  halfwords) and the retail-only messages inserted in ID order (MID1 is sorted; e.g. the Dalmatian/Boxer/Husky
+  breed names), the retail-only files appended, and every other differing English or language-free file taken
+  from retail (the demo's UI graphics grey out Buy and shop/menu entries) except the sound archive, the build
+  stamps and archives missing an entry name the demo uses (some Scene/ ones); other languages stay demo (space). The demo's directory/file order (file IDs) is kept and the image
   stays within 64 MB. The port reads card and header from it in full-game mode when present.
 - Kennel: Buy (func_0211c69c button 0, dropped in the demo) opens the kennel shop through the kept state-4 path;
   func_0211c964 no longer greys it out. func_0208b604 borrows a similar breed's shop icon if one is missing.

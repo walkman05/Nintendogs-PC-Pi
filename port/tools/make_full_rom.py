@@ -84,30 +84,52 @@ def bmg_messages(d):
     return out
 
 
+def bmg_table(d):
+    """(message ids in MID1 order, {id: INF1 entry bytes after the offset})"""
+    secs = bmg_sections(d)
+    io, _ = secs[b'INF1']
+    n, esz = struct.unpack_from('<HH', d, io + 8)
+    mo, _ = secs[b'MID1']
+    ids = struct.unpack_from('<%dI' % n, d, mo + 16)
+    return ids, {mid: d[io + 16 + i * esz + 4:io + 16 + (i + 1) * esz] for i, mid in enumerate(ids)}
+
+
+def section(magic, header, body):
+    s = magic + b'\0\0\0\0' + header + body
+    s += b'\0' * (-len(s) % 32)
+    return s[:4] + struct.pack('<I', len(s)) + s[8:]
+
+
 def merge_bmg(demo, retail):
-    """the demo file's layout (INF1 attributes, MID1, order) with each message taken from the retail file by ID"""
+    """the demo file's layout (INF1 attributes, MID1 ids) with each message taken from the retail file by ID; the
+    retail file's extra messages (e.g. the breeds the demo dropped) are inserted in ID order (MID1 is sorted)"""
     r = bmg_messages(retail)
+    d = bmg_messages(demo)
     secs = bmg_sections(demo)
-    io, isz = secs[b'INF1']
+    io, _ = secs[b'INF1']
     n, esz = struct.unpack_from('<HH', demo, io + 8)
     mo, _ = secs[b'MID1']
-    ids = struct.unpack_from('<%dI' % n, demo, mo + 16)
-    d = bmg_messages(demo)
-    inf = bytearray(demo[io:io + isz])
+    ids, attrs = bmg_table(demo)
+    rids, rattrs = bmg_table(retail)
+    if list(ids) == sorted(ids):
+        ids = sorted(set(ids) | set(rids))
+    inf = bytearray()
     dat = bytearray(b'\0\0')  # offset 0: the empty message
-    for i, mid in enumerate(ids):
+    for mid in ids:
         s = r.get(mid) or d.get(mid) or b''
         off = 0
         if s:
             off = len(dat)
             dat += s + b'\0\0'
-        struct.pack_into('<I', inf, 16 + i * esz, off)
-    dat1 = b'DAT1' + struct.pack('<I', 0) + bytes(dat)
-    dat1 += b'\0' * (-len(dat1) % 32)
-    dat1 = dat1[:4] + struct.pack('<I', len(dat1)) + dat1[8:]
-    body = bytes(inf) + dat1
+        a = attrs.get(mid) or rattrs.get(mid) or b''
+        inf += struct.pack('<I', off) + (a + b'\0' * esz)[:esz - 4]
+    body = section(b'INF1', struct.pack('<HH', len(ids), esz) + demo[io + 12:io + 16], inf)
+    body += section(b'DAT1', b'', dat)
     for mag, (o, sz) in sorted(secs.items(), key=lambda kv: kv[1][0]):
-        if mag not in (b'INF1', b'DAT1'):
+        if mag == b'MID1':
+            body += section(b'MID1', struct.pack('<H', len(ids)) + demo[o + 10:o + 16],
+                            struct.pack('<%dI' % len(ids), *ids))
+        elif mag not in (b'INF1', b'DAT1'):
             body += demo[o:o + sz]
     head = bytearray(demo[:0x20])
     struct.pack_into('<I', head, 8, 0x20 + len(body))
@@ -158,6 +180,40 @@ def build_fnt(paths, first_id, base):
     return bytes(main + blob), order
 
 
+def narc_names(d):
+    """the file names inside a NARC archive (the game looks its entries up by name)"""
+    o = struct.unpack_from('<H', d, 12)[0]
+    o += struct.unpack_from('<I', d, o + 4)[0]  # past BTAF
+    fnt = o + 8
+    out = set()
+
+    def walk(did, path):
+        p = fnt + struct.unpack_from('<I', d, fnt + 8 * did)[0]
+        while d[p]:
+            t = d[p]
+            name = d[p + 1:p + 1 + (t & 0x7f)].decode('latin1')
+            p += 1 + (t & 0x7f)
+            if t & 0x80:
+                walk(struct.unpack_from('<H', d, p)[0] & 0xfff, path + name + '/')
+                p += 2
+            else:
+                out.add(path + name)
+    walk(0, '')
+    return out
+
+
+def retail_file_fits(path, demo, retail):
+    """whether the retail cartridge's copy can stand in for the demo's: English or language-free files only (the
+    other languages' copies would not fit in the card), not the sound archive (its IDs belong to the code) or the
+    build stamps, and archives only when they still hold every entry the demo looks up"""
+    name = path.rsplit('/', 1)[-1]
+    if name[:4] in ('Fra_', 'Ger_', 'Ita_', 'Spa_') or path.startswith(('Audio/', 'System/')):
+        return False
+    if demo[:4] == b'NARC':
+        return retail[:4] == b'NARC' and narc_names(demo) <= narc_names(retail)
+    return True
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--demo', required=True)
@@ -171,12 +227,16 @@ def main():
     rfiles, _ = read_fs(retail)
 
     files = dict(dfiles)
-    merged = added = 0
+    merged = added = replaced = 0
     for p, data in rfiles.items():
         if p in files:
             if p.endswith('.bmg') and data[:8] == b'MESGbmg1' and files[p] != data:
                 files[p] = merge_bmg(files[p], data)
                 merged += 1
+            elif files[p] != data and retail_file_fits(p, files[p], data):
+                # the demo's copies grey out what the kiosk locks (the kennel's Buy button, shop and menu entries)
+                files[p] = data
+                replaced += 1
         else:
             files[p] = data
             added += 1
@@ -220,8 +280,8 @@ def main():
         f.write(out)
     with open(os.path.join(host, 'full_header.bin'), 'wb') as f:
         f.write(out[:0x170])
-    print('full.nds: %d files (%d added from the retail cartridge, %d message files merged), %.1f MB'
-          % (len(order), added, merged, len(out) / 1e6))
+    print("full.nds: %d files (%d added from the retail cartridge, %d message files merged, %d files replaced), %.1f MB"
+          % (len(order), added, merged, replaced, len(out) / 1e6))
 
 
 if __name__ == '__main__':
