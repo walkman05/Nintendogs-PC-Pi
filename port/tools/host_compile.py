@@ -241,7 +241,11 @@ def main():
             for src in extras:
                 o = os.path.join(OBJDIR, 'port_' + os.path.basename(src)[:-2] + '.o')
                 opt = '-O2' if os.path.basename(src) in FAST_SRC else GAME_OPT
-                r = subprocess.run([args.cc] + FLAGS + [opt, '-c', src, '-o', o], capture_output=True, text=True)
+                if os.path.basename(src) == 'main.c':  # fallback data folder when started without --data (double-click)
+                    opt = [opt, '-DNDOGS_DEFAULT_DATA="%s"' % os.path.join(ROOT, 'extracted').replace('\\', '/')]
+                else:
+                    opt = [opt]
+                r = subprocess.run([args.cc] + FLAGS + opt + ['-c', src, '-o', o], capture_output=True, text=True)
                 if r.returncode:
                     f.write('port source failed: %s\n%s\n' % (os.path.relpath(src, ROOT), r.stderr[:2000]))
                 else:

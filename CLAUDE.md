@@ -52,6 +52,7 @@ map at the real addresses (`port/src/platform_mem.c`, I/O region as plain RAM fo
 `extracted/rom`, rewrites code pointers in game data to the compiled C (`port/src/loader.c` + generated
 `host_functab` from `port/tools/gen_functab.py`; `extracted/host/` tables from extract_rom.py), replays the ROM's
 startup and calls the game's main(). Overlays load through FS_LoadOverlay (src hook -> `ndogs_load_overlay`).
+Without `--data` (e.g. double-clicked) it looks for `extracted/` in the current folder, next to the exe and its parent folders, then the source tree it was built from (`NDOGS_DEFAULT_DATA`), and shows a message box if none loads. On Windows, loading user32 maps a ~20 MB system section at a random low address that usually covers the DS map (any launch outside MSYS bash); the exe then starts itself again suspended with the DS ranges reserved (`NDOGS_RESERVED`, `platform_relaunch_reserved`).
 `NDOGS_WATCHDOG=<s>` prints the main thread's backtrace after <s> seconds; resolve it with the `.map` artifact.
 Status: the game runs its main loop at 60 fps (3D command stream and sound commands every frame); nothing is
 drawn yet (milestone 5).

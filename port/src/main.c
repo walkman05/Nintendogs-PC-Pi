@@ -144,13 +144,77 @@ static void install_fault_handler(void)
 #endif
 }
 
+static int is_data_dir(const char *dir)
+{
+    char path[1024];
+    FILE *f;
+    snprintf(path, sizeof path, "%s/rom/header.yaml", dir);
+    f = fopen(path, "rb");
+    if (f)
+        fclose(f);
+    return f != 0;
+}
+
+/* Without --data (e.g. started by double-click, from the exe's folder): try extracted/ in the current folder, next
+ * to the exe and in its parent folders, then the source tree the exe was built from. */
+static const char *find_data_dir(void)
+{
+    static char buf[1024];
+    char *slash;
+    int up;
+    if (is_data_dir("extracted"))
+        return "extracted";
+#ifdef _WIN32
+    if (GetModuleFileNameA(0, buf, sizeof buf - 16) > 0) {
+        for (up = 0; up < 4 && (slash = strrchr(buf, '\\')) != 0; up++) {
+            strcpy(slash + 1, "extracted");
+            if (is_data_dir(buf))
+                return buf;
+            *slash = 0;
+        }
+    }
+#else
+    {
+        ssize_t n = readlink("/proc/self/exe", buf, sizeof buf - 16);
+        if (n > 0) {
+            buf[n] = 0;
+            for (up = 0; up < 4 && (slash = strrchr(buf, '/')) != 0; up++) {
+                strcpy(slash + 1, "extracted");
+                if (is_data_dir(buf))
+                    return buf;
+                *slash = 0;
+            }
+        }
+    }
+#endif
+#ifdef NDOGS_DEFAULT_DATA
+    if (is_data_dir(NDOGS_DEFAULT_DATA))
+        return NDOGS_DEFAULT_DATA;
+#endif
+    return "extracted";
+}
+
+static void fatal_box(const char *dir)
+{
+#ifdef _WIN32
+    char msg[1400];
+    snprintf(msg, sizeof msg, "Could not load the game data from \"%s\".\n\nRun extract_rom.py on the ROM first, or "
+             "start the game as: nintendogs_pc --data <path to extracted>", dir);
+    MessageBoxA(0, msg, "nintendogs_pc", MB_OK | MB_ICONERROR);
+#else
+    (void)dir;
+#endif
+}
+
 int main(int argc, char **argv)
 {
-    const char *dir = "extracted";
+    const char *dir = 0;
     int i;
     for (i = 1; i < argc; i++)
         if (!strcmp(argv[i], "--data") && i + 1 < argc)
             dir = argv[++i];
+    if (!dir)
+        dir = find_data_dir();
     setvbuf(stdout, 0, _IONBF, 0);
     printf("nintendogs_pc: %d-bit build\n", (int)(sizeof(void *) * 8));
     if (sizeof(void *) != 4) {
@@ -161,13 +225,20 @@ int main(int argc, char **argv)
     if (getenv("NDOGS_WATCHDOG"))
         start_watchdog(atoi(getenv("NDOGS_WATCHDOG")));
     stage = "memory map";
-    if (platform_map_ds_memory() != 0)
+    if (platform_map_ds_memory() != 0) {
+        int code = platform_relaunch_reserved();
+        if (code >= 0)
+            return code;
+        fprintf(stderr, "could not map the DS memory\n");
         return 1;
+    }
     hw_init();
     hw_trap_install();
     stage = "loading";
-    if (ndogs_load_main(dir) != 0)
+    if (ndogs_load_main(dir) != 0) {
+        fatal_box(dir);
         return 1;
+    }
     hw_card_open(dir);
     if (getenv("NDOGS_TRAPBENCH")) {  /* cost of one trapped register access */
         extern double now_ms(void);

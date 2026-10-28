@@ -1,8 +1,11 @@
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include "platform_mem.h"
 
 #ifdef _WIN32
 #include <windows.h>
+#include <psapi.h>
 #else
 #include <sys/mman.h>
 #include <unistd.h>
@@ -80,9 +83,63 @@ static int map_io(unsigned long base, unsigned long size)
                (void *)(io_windows[1] + IO_WINDOW);
 }
 
+#ifdef _WIN32
+/* Loading user32 maps a ~20 MB system section at a random low address, which often covers the DS map (every
+ * launch from Explorer or PowerShell; launches from MSYS bash happened to miss it). The address space is still free
+ * while a new process is suspended, so on failure the exe starts itself again suspended with the DS ranges reserved
+ * (NDOGS_RESERVED set), and the new process releases those reservations right before mapping them. Returns the new
+ * process's exit code, or -1 when it could not be started. */
+int platform_relaunch_reserved(void)
+{
+    STARTUPINFOA si;
+    PROCESS_INFORMATION pi;
+    char exe[MAX_PATH];
+    DWORD code = 1;
+    int i;
+    if (getenv("NDOGS_RESERVED") || !GetModuleFileNameA(0, exe, sizeof exe))
+        return -1;
+    SetEnvironmentVariableA("NDOGS_RESERVED", "1");
+    memset(&si, 0, sizeof si);
+    si.cb = sizeof si;
+    if (!CreateProcessA(exe, GetCommandLineA(), 0, 0, TRUE, CREATE_SUSPENDED, 0, 0, &si, &pi))
+        return -1;
+    for (i = 0; i < ds_region_count; i++)
+        VirtualAllocEx(pi.hProcess, (void *)ds_regions[i].base, ds_regions[i].size, MEM_RESERVE, PAGE_NOACCESS);
+    ResumeThread(pi.hThread);
+    WaitForSingleObject(pi.hProcess, INFINITE);
+    GetExitCodeProcess(pi.hProcess, &code);
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+    return (int)code;
+}
+
+/* drop the reservations the parent made (only whole private reservations at exactly a region's base) */
+static void release_parent_reservations(void)
+{
+    int i;
+    if (!getenv("NDOGS_RESERVED"))
+        return;
+    for (i = 0; i < ds_region_count; i++) {
+        MEMORY_BASIC_INFORMATION m;
+        void *base = (void *)ds_regions[i].base;
+        if (VirtualQuery(base, &m, sizeof m) && m.AllocationBase == base && m.State == MEM_RESERVE &&
+            m.Type == MEM_PRIVATE)
+            VirtualFree(base, 0, MEM_RELEASE);
+    }
+}
+#else
+int platform_relaunch_reserved(void)
+{
+    return -1;
+}
+#endif
+
 int platform_map_ds_memory(void)
 {
     int i, bad = 0;
+#ifdef _WIN32
+    release_parent_reservations();
+#endif
     for (i = 0; i < ds_region_count; i++) {
         void *p;
         if (ds_regions[i].base == io_windows[0]) {
@@ -94,7 +151,26 @@ int platform_map_ds_memory(void)
         }
         p = map_fixed(ds_regions[i].base, ds_regions[i].size);
         if (p != (void *)ds_regions[i].base) {
+#ifdef _WIN32
+            if (!getenv("NDOGS_RESERVED"))
+                return 1;  /* quietly: main relaunches with the ranges reserved */
+#endif
             fprintf(stderr, "could not map %s at 0x%08lx\n", ds_regions[i].name, ds_regions[i].base);
+#ifdef _WIN32
+            {
+                MEMORY_BASIC_INFORMATION m;
+                char name[MAX_PATH] = "";
+                if (VirtualQuery((void *)ds_regions[i].base, &m, sizeof m)) {
+                    MEMORY_BASIC_INFORMATION e;
+                    char *q = (char *)m.AllocationBase;
+                    while (VirtualQuery(q, &e, sizeof e) && e.AllocationBase == m.AllocationBase)
+                        q += e.RegionSize;
+                    K32GetMappedFileNameA(GetCurrentProcess(), m.AllocationBase, name, sizeof name);
+                    fprintf(stderr, "  in use: %p-%p, state %lx, type %lx %s\n", m.AllocationBase, q,
+                            m.State, m.Type, name);
+                }
+            }
+#endif
             bad = 1;
         }
     }

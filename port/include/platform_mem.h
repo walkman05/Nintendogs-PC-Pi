@@ -16,6 +16,8 @@ extern const int ds_region_count;
 /* Returns 0 when every region is mapped at its exact address. */
 int platform_map_ds_memory(void);
 void platform_unmap_ds_memory(void);
+/* When the map fails: run the exe again with the DS ranges reserved up front; returns its exit code, or -1. */
+int platform_relaunch_reserved(void);
 
 /* The two 64 KiB I/O windows holding hardware registers (0x04000000, 0x04100000) are shared memory mapped twice:
  * at the DS address, where register pages are kept inaccessible so the game's accesses trap, and at an alias that
