@@ -53,6 +53,16 @@ map at the real addresses (`port/src/platform_mem.c`, I/O region as plain RAM fo
 `host_functab` from `port/tools/gen_functab.py`; `extracted/host/` tables from extract_rom.py), replays the ROM's
 startup and calls the game's main(). Overlays load through FS_LoadOverlay (src hook -> `ndogs_load_overlay`).
 Without `--data` (e.g. double-clicked) it looks for `extracted/` in the current folder, next to the exe and its parent folders, then the source tree it was built from (`NDOGS_DEFAULT_DATA`), and shows a message box if none loads. On Windows, loading user32 maps a ~20 MB system section at a random low address that usually covers the DS map (any launch outside MSYS bash); the exe then starts itself again suspended with the DS ranges reserved (`NDOGS_RESERVED`, `platform_relaunch_reserved`).
+First-run setup (`port/src/setup.c`, so a shared exe needs no Python or dsd): when no data folder is found, or it
+has no `host/full.nds`, the exe looks for the ROMs (by header game code: demo A36P, checked by CRC32 because the
+tables below only fit it; Dachshund & Friends ADGP) on the command line, next to the exe and in the current folder,
+and writes `<exe dir>/extracted`: the ARM9 binary (BLZ-decompressed), ITCM/DTCM from its autoload table, the
+overlays, the header, rom_path.txt, and `full.nds` as make_full_rom.py builds it (byte-identical; keep the two in
+step). modules.txt and fix_*.txt come from dsd's code analysis, so `port/tools/gen_hosttabs.py` compiles them into
+the exe at build time (empty without extracted/, e.g. CI: such an exe can't set up). Without full.nds the game runs
+as the kiosk demo. `NDOGS_NODEFAULT=1` ignores the build tree's data (to test a fresh setup), `NDOGS_NOSETUP=1`
+skips setup. To share a test build: `strip -s` the exe (debug info is ~11 MB of the ~15 MB) and zip it with a
+readme; never include extracted/.
 `NDOGS_WATCHDOG=<s>` prints the main thread's backtrace after <s> seconds; resolve it with the `.map` artifact.
 Status: the game runs its main loop at 60 fps (3D command stream and sound commands every frame); nothing is
 drawn yet (milestone 5).

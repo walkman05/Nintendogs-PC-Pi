@@ -149,7 +149,7 @@ static int is_data_dir(const char *dir)
 {
     char path[1024];
     FILE *f;
-    snprintf(path, sizeof path, "%s/rom/header.yaml", dir);
+    snprintf(path, sizeof path, "%s/host/modules.txt", dir);
     f = fopen(path, "rb");
     if (f)
         fclose(f);
@@ -189,18 +189,41 @@ static const char *find_data_dir(void)
     }
 #endif
 #ifdef NDOGS_DEFAULT_DATA
-    if (is_data_dir(NDOGS_DEFAULT_DATA))
+    if (!getenv("NDOGS_NODEFAULT") && is_data_dir(NDOGS_DEFAULT_DATA))  /* NDOGS_NODEFAULT: test a fresh setup */
         return NDOGS_DEFAULT_DATA;
 #endif
     return "extracted";
+}
+
+/* the folder the exe is in ("." if unknown) */
+static const char *exe_dir(void)
+{
+    static char buf[1024];
+    char *slash;
+#ifdef _WIN32
+    if (GetModuleFileNameA(0, buf, sizeof buf) > 0 && (slash = strrchr(buf, '\\')) != 0) {
+        *slash = 0;
+        return buf;
+    }
+#else
+    ssize_t n = readlink("/proc/self/exe", buf, sizeof buf - 1);
+    if (n > 0) {
+        buf[n] = 0;
+        if ((slash = strrchr(buf, '/')) != 0) {
+            *slash = 0;
+            return buf;
+        }
+    }
+#endif
+    return ".";
 }
 
 static void fatal_box(const char *dir)
 {
 #ifdef _WIN32
     char msg[1400];
-    snprintf(msg, sizeof msg, "Could not load the game data from \"%s\".\n\nRun extract_rom.py on the ROM first, or "
-             "start the game as: nintendogs_pc --data <path to extracted>", dir);
+    snprintf(msg, sizeof msg, "Could not load the game data from \"%s\".\n\nDelete that folder and start the game "
+             "again with the ROMs next to nintendogs_pc.exe to set it up anew.", dir);
     MessageBoxA(0, msg, "nintendogs_pc", MB_OK | MB_ICONERROR);
 #else
     (void)dir;
@@ -216,9 +239,30 @@ int main(int argc, char **argv)
             dir = argv[++i];
         else if (!strcmp(argv[i], "--demo"))
             ndogs_full = 0;
-    if (!dir)
-        dir = find_data_dir();
     setvbuf(stdout, 0, _IONBF, 0);
+    if (!dir) {
+        dir = find_data_dir();
+        /* first run: build the data folder from the user's ROMs (port/src/setup.c); the relaunched copy
+         * (platform_relaunch_reserved) finds it done */
+        if (!getenv("NDOGS_RESERVED") && !getenv("NDOGS_NOSETUP")) {
+            extern const char *ndogs_setup(const char *found, const char *exe_dir, int have_data, int argc,
+                                           char **argv);
+            dir = ndogs_setup(dir, exe_dir(), is_data_dir(dir), argc, argv);
+            if (!dir)
+                return 1;
+        }
+    }
+    {
+        char p[1100];
+        FILE *f;
+        snprintf(p, sizeof p, "%s/host/full.nds", dir);
+        if ((f = fopen(p, "rb")) != 0)
+            fclose(f);
+        else if (ndogs_full) {
+            printf("no full-game data (host/full.nds): running the kiosk demo\n");
+            ndogs_full = 0;
+        }
+    }
     printf("nintendogs_pc: %d-bit build\n", (int)(sizeof(void *) * 8));
     if (sizeof(void *) != 4) {
         fprintf(stderr, "a 32-bit build is required\n");

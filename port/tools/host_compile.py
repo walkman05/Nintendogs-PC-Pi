@@ -13,7 +13,7 @@ FLAGS = ['-m32', '-std=gnu99', '-g1', '-fno-omit-frame-pointer', '-fwrapv', '-fn
          '-I', os.path.join(ROOT, 'include'), '-I', os.path.join(ROOT, 'port', 'include')]
 # game code optimisation (NDOGS_OPT, default -O0: -O1 exposes undefined behaviour in the decompiled C); the renderers always build at -O2
 GAME_OPT = os.environ.get('NDOGS_OPT', '-O0')
-FAST_SRC = ('gpu2d.c', 'gpu3d.c', 'video.c', 'vram.c', 'window.c', 'audio.c', 'snd.c', 'workers.c')
+FAST_SRC = ('gpu2d.c', 'gpu3d.c', 'video.c', 'vram.c', 'window.c', 'audio.c', 'snd.c', 'workers.c', 'setup.c')
 FLAGS += os.environ.get('NDOGS_CFLAGS', '').split()  # extra flags, e.g. sanitizer checks for a test build
 DATA_RE = re.compile(r'\b(?:data|bss)_(?:ov[0-9]+_)?([0-9a-f]{8})(?:__\d+)?\b')
 OBJDIR = None
@@ -233,8 +233,10 @@ def main():
             ok = [obj_path(p) for p, rc, _ in results if rc == 0]
             gen = os.path.join(OBJDIR, 'functab.c')
             subprocess.run([sys.executable, os.path.join(ROOT, 'port', 'tools', 'gen_functab.py'), gen], check=True)
+            tabs = os.path.join(OBJDIR, 'hosttabs.c')  # the loader tables, for the first-run setup (setup.c)
+            subprocess.run([sys.executable, os.path.join(ROOT, 'port', 'tools', 'gen_hosttabs.py'), tabs], check=True)
             extras = [os.path.join(ROOT, 'port', 'src', x) for x in
-                      ('host_cpu.c', 'host_link.c', 'hw.c', 'hw_trap.c', 'hw_card.c', 'host_threads.c', 'vram.c', 'video.c', 'window.c', 'audio.c', 'snd.c', 'workers.c', 'gpu2d.c', 'gpu3d.c', 'platform_mem.c', 'loader.c', 'save.c', 'mic.c', 'main.c')] + [gen]
+                      ('host_cpu.c', 'host_link.c', 'hw.c', 'hw_trap.c', 'hw_card.c', 'host_threads.c', 'vram.c', 'video.c', 'window.c', 'audio.c', 'snd.c', 'workers.c', 'gpu2d.c', 'gpu3d.c', 'platform_mem.c', 'loader.c', 'save.c', 'mic.c', 'setup.c', 'main.c')] + [gen, tabs]
             extras = [x for x in extras if os.path.exists(x)] + [x for x in os.environ.get('NDOGS_EXTRA_SRC', '').split(';') if x]
             hf = os.path.join(ROOT, 'port', 'hostfuncs')
             extras += [os.path.join(hf, x) for x in sorted(os.listdir(hf)) if x.endswith('.c')]
