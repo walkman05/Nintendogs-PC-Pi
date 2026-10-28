@@ -102,17 +102,29 @@ static void arm7_rtc(u32 data)
 }
 
 /* PXI channel 7, sound: each message is the address of a linked list of commands ({next, id, args[4]}). The
- * ARM7 runs them and then advances finishCommandTag, the first word of the shared work area the ARM9 handed over
- * with command 29 (SHARED_WORK). No audio yet: commands are only acknowledged. */
+ * ARM7 runs them (port/src/snd.c, the sound driver) and then advances finishCommandTag, the first word of the shared
+ * work area the ARM9 handed over with command 29 (SHARED_WORK). NDOGS_SNDLOG=1 logs the commands. */
+extern void snd_set_shared_work(u32 addr);
+extern void snd_command(u32 id, u32 a0, u32 a1, u32 a2, u32 a3);
 static u32 snd_shared;
 static void arm7_sound(u32 addr)
 {
     u32 cmd, guard = 0;
     if (!addr)
         return;
-    for (cmd = addr; cmd && guard < 4096; cmd = *(volatile u32 *)cmd, guard++)
-        if (*(volatile u32 *)(cmd + 4) == 29)
-            snd_shared = *(volatile u32 *)(cmd + 8);
+    static int sndlog = -1;
+    if (sndlog < 0)
+        sndlog = getenv("NDOGS_SNDLOG") != 0;
+    for (cmd = addr; cmd && guard < 4096; cmd = *(volatile u32 *)cmd, guard++) {
+        volatile u32 *c = (volatile u32 *)cmd;
+        if (sndlog)
+            fprintf(stderr, "snd %u: %08x %08x %08x %08x\n", c[1], c[2], c[3], c[4], c[5]);
+        if (c[1] == 29) {
+            snd_shared = c[2];
+            snd_set_shared_work(c[2]);
+        } else
+            snd_command(c[1], c[2], c[3], c[4], c[5]);
+    }
     if (snd_shared)
         (*(volatile u32 *)snd_shared)++;
 }
@@ -422,6 +434,12 @@ void hw_init(void)
 {
     memset(&hw, 0, sizeof hw);
     {
+        extern void snd_init(void);
+        extern void audio_open(int rate);
+        snd_init();
+        audio_open(32768);
+    }
+    {
         extern u32 watch_addr;
         extern u32 trap_prof_set(u32);
         trap_prof_set(getenv("NDOGS_TRAPPROF") ? (u32)atoi(getenv("NDOGS_TRAPPROF")) : 0);
@@ -594,9 +612,29 @@ static void display_start(void)
         video_frame();
 }
 
+/* Audio: each VBlank the sound driver renders 1/60 s (game time) and the host device plays it. */
+extern void snd_init(void);
+extern void snd_render(s16 *out, int frames);
+extern void audio_open(int rate);
+extern void audio_push(const s16 *stereo, int frames);
+#define AUDIO_RATE 32768
+
+static void audio_frame(void)
+{
+    static double acc;
+    static s16 buf[2048 * 2];
+    int n;
+    acc += AUDIO_RATE / 60.0;
+    n = (int)acc;
+    acc -= n;
+    snd_render(buf, n);
+    audio_push(buf, n);
+}
+
 static void vblank_event(void)
 {
     hw_frame++;
+    audio_frame();
     if (hw_in_exception())
         vblank_pending = 1;
     else

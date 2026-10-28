@@ -13,7 +13,7 @@ FLAGS = ['-m32', '-std=gnu99', '-g1', '-fno-omit-frame-pointer', '-fwrapv', '-fn
          '-I', os.path.join(ROOT, 'include'), '-I', os.path.join(ROOT, 'port', 'include')]
 # game code optimisation (NDOGS_OPT, default -O0: -O1 exposes undefined behaviour in the decompiled C); the renderers always build at -O2
 GAME_OPT = os.environ.get('NDOGS_OPT', '-O0')
-FAST_SRC = ('gpu2d.c', 'gpu3d.c', 'video.c', 'vram.c', 'window.c')
+FAST_SRC = ('gpu2d.c', 'gpu3d.c', 'video.c', 'vram.c', 'window.c', 'audio.c', 'snd.c')
 DATA_RE = re.compile(r'\b(?:data|bss)_(?:ov[0-9]+_)?([0-9a-f]{8})(?:__\d+)?\b')
 OBJDIR = None
 
@@ -86,7 +86,8 @@ def link(cc, objs, out):
         f.write('\n'.join(o.replace('\\', '/') for o in objs))
     # fixed load address (no ASLR): keeps the program clear of the DS address range and makes the map usable
     flags = ['-m32', '-Wl,-Map=' + out + '.map'] + (['-Wl,--disable-dynamicbase', '-Wl,--image-base=0x10000000'] if win else ['-no-pie', '-Wl,-Ttext-segment=0x10000000'])
-    r = subprocess.run([cc] + flags + ['@' + rsp, script, '-o', out],
+    libs = [] if win else ['-ldl']  # dlopen (ALSA, X11)
+    r = subprocess.run([cc] + flags + ['@' + rsp, script, '-o', out] + libs,
                        capture_output=True, text=True)
     undef = sorted(set(re.findall(r"undefined reference to `([^']+)'", r.stderr)))
     dup = sorted(set(re.findall(r"multiple definition of `([^']+)'", r.stderr)))
@@ -139,7 +140,7 @@ def main():
             gen = os.path.join(OBJDIR, 'functab.c')
             subprocess.run([sys.executable, os.path.join(ROOT, 'port', 'tools', 'gen_functab.py'), gen], check=True)
             extras = [os.path.join(ROOT, 'port', 'src', x) for x in
-                      ('host_cpu.c', 'host_link.c', 'hw.c', 'hw_trap.c', 'hw_card.c', 'host_threads.c', 'vram.c', 'video.c', 'window.c', 'gpu2d.c', 'gpu3d.c', 'platform_mem.c', 'loader.c', 'main.c')] + [gen]
+                      ('host_cpu.c', 'host_link.c', 'hw.c', 'hw_trap.c', 'hw_card.c', 'host_threads.c', 'vram.c', 'video.c', 'window.c', 'audio.c', 'snd.c', 'gpu2d.c', 'gpu3d.c', 'platform_mem.c', 'loader.c', 'main.c')] + [gen]
             extras = [x for x in extras if os.path.exists(x)] + [x for x in os.environ.get('NDOGS_EXTRA_SRC', '').split(';') if x]
             hf = os.path.join(ROOT, 'port', 'hostfuncs')
             extras += [os.path.join(hf, x) for x in sorted(os.listdir(hf)) if x.endswith('.c')]

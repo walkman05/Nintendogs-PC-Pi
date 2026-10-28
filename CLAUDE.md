@@ -24,7 +24,7 @@ Two things live here:
 
 ## Milestones
 M0 infra (this) · M1 ROM extraction · M2 host compile of all C · M3 memory/overlay loading · M4 hardware layer ·
-M5 window + rendering (boots to the menu and gameplay) · M6 input, audio, polish.
+M5 window + rendering (boots to the menu and gameplay) · M6 audio + input polish.
 
 ## ROM extraction (milestone 1)
 `python port/tools/extract_rom.py --rom <baserom.nds> --dsd <dsd>` uses AetiasHax/ds-decomp (dsd v0.12.1, MIT) to
@@ -112,6 +112,18 @@ finds these from the original asm (registers read before written, or forwarded t
 10 more it found are fixed (the dog material colour setters among them). What it still lists was reviewed and is
 harmless: func_0204160c/02062700/020627c0/020636d0 take a 64-bit argument (two registers), and
 func_0208cc2c/0208cdfc/0208db60/020fdb24 leave don't-care registers for callees called in loops.
+
+## Audio and input (milestone 6)
+- `port/src/snd.c`: the ARM7 sound driver stand-in (commands from PXI channel 7 via hw.c): 16 players with SSEQ
+  sequence interpretation, SBNK instruments (PCM/PSG/noise/drum set/key split), SWAR waves (PCM8/16, IMA-ADPCM),
+  SDK-style envelopes, decibel volume mix, LFO/portamento/sweep, 16 voices mixed at 32768 Hz, SNDSharedWork
+  status/variables. Written from GBATEK and the SDAT format descriptions. `port/src/snd_selftest.c` (not part of
+  the game build) renders a synthetic bank/sequence to a WAV and checks pitches, status and parameters.
+- `port/src/audio.c`: host output, pushed once per VBlank (1/60 s of game time): waveOut on Windows, ALSA via
+  dlopen on Linux; +12 dB output gain (`NDOGS_VOLUME=<percent>`), `NDOGS_WAV=<file>` records, `NDOGS_MUTE=1`.
+- `port/src/window.c`: resizable window (aspect kept, F11 full screen on Windows), XInput gamepads, X11 window on
+  Linux via dlopen (not yet run on Linux). `NDOGS_SNDLOG=1` logs sound commands.
+- Not done: microphone (the full game's name calling), direct channel/stream sound commands (unused so far).
 
 ## Build
 ```
