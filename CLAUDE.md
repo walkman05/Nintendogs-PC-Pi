@@ -244,9 +244,26 @@ then data addresses through the literal-pool words of matched code; output `extr
 56 changed (similar), 46 with no counterpart (41 main, 5 itcm), 27 retail-only in main; calls in matched code
 agree (1 mismatch to check). Data: 3,386 addresses paired, no conflicts; of the 2,503 data symbols the C uses,
 2,441 map directly, 33 lie within 0x100 of a mapped address, 26 others (some are constants, not addresses).
-Next: the remaining data symbols; build-time remapping (function table, data symbol addresses and loader
-fix-ups for the retail layout) and setup from the retail ROM; decompile the changed / retail-only functions
-(the save code among them); drop the demo gates in a retail build.
+Data names are resolved per module (overlays share addresses): direct pairs, then the n-th loaded address of
+changed functions with the same load count, then an offset within 0x100 of a pair (bytes checked), an address
+inside a same-code function (jump tables), or the demo's bytes found once in retail with pointer-sized words
+ignored. All 2,540 names resolve except 3 used only by the kiosk reset (func_02088e48), kept at their demo address.
+`python port/tools/retail_match.py --rom <retail.nds>` (runs dsd if extracted/retail/config is missing) writes
+`extracted/retail/symbols.txt` and `extracted/retail/host/` (loader tables, header, rom_path), making
+extracted/retail a data folder for the retail build:
+`python port/tools/host_compile.py ... --target retail --exe nintendogs_pc_retail.exe` links the same game objects
+with retail data addresses (datasyms_retail.ld), a function table at retail addresses (gen_functab.py --map), the
+retail loader tables for setup (gen_hosttabs.py <folder>) and port files built with NDOGS_RETAIL (setup from the
+retail ROM alone; full-game mode without full.nds). Layout constants that differ per build come from modules.txt:
+the overlay base and the arena starts (loader.c `ndogs_ov_base/arena_*`, used by func_020801d8); hw.c's thread
+info goes through data_02155cf8. The code that runs is still the demo's C (with the full-game patches) on the
+retail data, so the changed functions are where to look when something breaks.
+Status: the retail exe runs from the Dachshund & Friends ROM alone (first-run setup included): door, kennel,
+breed list (Husky), buying, Home, saving, as on the demo build. Fixed on the way: func_020a457c called the
+trampoline func_0208ddac without the r0 it forwards (func_0208c3e0's result, the system.ini text): the demo build
+only worked because the stack slot happened to hold it.
+Next: decompile the changed / retail-only functions (the save code among them); drop the demo gates in a retail
+build.
 
 ## Build
 ```

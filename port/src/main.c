@@ -252,6 +252,7 @@ int main(int argc, char **argv)
                 return 1;
         }
     }
+#ifndef NDOGS_RETAIL  /* the retail build runs the cartridge itself: no full.nds, always the full game */
     {
         char p[1100];
         FILE *f;
@@ -263,6 +264,7 @@ int main(int argc, char **argv)
             ndogs_full = 0;
         }
     }
+#endif
     printf("nintendogs_pc: %d-bit build\n", (int)(sizeof(void *) * 8));
     if (sizeof(void *) != 4) {
         fprintf(stderr, "a 32-bit build is required\n");

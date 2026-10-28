@@ -17,6 +17,7 @@ FAST_SRC = ('gpu2d.c', 'gpu3d.c', 'video.c', 'vram.c', 'window.c', 'audio.c', 's
 FLAGS += os.environ.get('NDOGS_CFLAGS', '').split()  # extra flags, e.g. sanitizer checks for a test build
 DATA_RE = re.compile(r'\b(?:data|bss)_(?:ov[0-9]+_)?([0-9a-f]{8})(?:__\d+)?\b')
 OBJDIR = None
+TARGET, SFX = 'demo', ''  # --target retail: link for the retail cartridge (generated files get a _retail suffix)
 
 
 def sources():
@@ -152,10 +153,16 @@ def link(cc, objs, out):
     for p in list(sources()) + [os.path.join(hf, x) for x in os.listdir(hf) if x.endswith('.c')]:
         with open(p, encoding='utf-8', errors='replace') as f:
             names.update(m.group(0) for m in DATA_RE.finditer(f.read()))
-    script = os.path.join(OBJDIR, 'datasyms.ld')
+    script = os.path.join(OBJDIR, 'datasyms%s.ld' % SFX)
+    addr = {}
+    if TARGET == 'retail':  # the retail cartridge's addresses (port/tools/retail_match.py)
+        for line in open(os.path.join(ROOT, 'extracted', 'retail', 'symbols.txt')):
+            p = line.split()
+            addr[p[0]] = p[1][2:]
     with open(script, 'w') as f:
         for n in sorted(names):
-            f.write('%s%s = 0x%s;\n' % (us, n, re.search(r'([0-9a-f]{8})(?:__\d+)?$', n).group(1)))
+            a = addr.get(n) or re.search(r'([0-9a-f]{8})(?:__\d+)?$', n).group(1)
+            f.write('%s%s = 0x%s;\n' % (us, n, a))
     # trampolines become x86 tail jumps (signature-agnostic; a missing target is reported like any other symbol)
     stub = os.path.join(OBJDIR, 'veneers.S')
     with open(os.path.join(ROOT, 'port', 'link', 'veneers.txt')) as v, open(stub, 'w') as f:
@@ -175,7 +182,7 @@ def link(cc, objs, out):
         open(wsrc, 'w').write(capture_wrappers(wrap))
         subprocess.run([cc] + FLAGS + ['-O0', '-c', wsrc, '-o', wsrc[:-2] + '.o'], check=True)
         objs.append(wsrc[:-2] + '.o')
-    rsp = os.path.join(OBJDIR, 'objs.rsp')
+    rsp = os.path.join(OBJDIR, 'objs%s.rsp' % SFX)
     with open(rsp, 'w') as f:
         f.write('\n'.join([o.replace('\\', '/') for o in objs] + ['-Wl,--wrap=' + w for w in wrap]))
     # fixed load address (no ASLR): keeps the program clear of the DS address range and makes the map usable
@@ -202,7 +209,12 @@ def main():
     ap.add_argument('--out', default='host_compile_report.txt')
     ap.add_argument('--link', help='object directory: keep objects and try linking the whole game')
     ap.add_argument('--exe', default='nintendogs_pc', help='name of the linked program (in the object directory)')
+    ap.add_argument('--target', choices=('demo', 'retail'), default='demo',
+                    help='the cartridge the program runs on: the kiosk demo, or Dachshund & Friends (needs '
+                         'port/tools/retail_match.py run first)')
     args = ap.parse_args()
+    global TARGET, SFX
+    TARGET, SFX = args.target, '' if args.target == 'demo' else '_retail'
     if args.link:
         OBJDIR = os.path.abspath(args.link)
         os.makedirs(OBJDIR, exist_ok=True)
@@ -231,22 +243,28 @@ def main():
             f.write(os.path.relpath(p, ROOT) + '\n')
         if args.link:
             ok = [obj_path(p) for p, rc, _ in results if rc == 0]
-            gen = os.path.join(OBJDIR, 'functab.c')
-            subprocess.run([sys.executable, os.path.join(ROOT, 'port', 'tools', 'gen_functab.py'), gen], check=True)
-            tabs = os.path.join(OBJDIR, 'hosttabs.c')  # the loader tables, for the first-run setup (setup.c)
-            subprocess.run([sys.executable, os.path.join(ROOT, 'port', 'tools', 'gen_hosttabs.py'), tabs], check=True)
+            retail = os.path.join(ROOT, 'extracted', 'retail')
+            gen = os.path.join(OBJDIR, 'functab%s.c' % SFX)
+            subprocess.run([sys.executable, os.path.join(ROOT, 'port', 'tools', 'gen_functab.py'), gen] +
+                           (['--map', os.path.join(retail, 'symbols.txt')] if TARGET == 'retail' else []), check=True)
+            tabs = os.path.join(OBJDIR, 'hosttabs%s.c' % SFX)  # the loader tables, for the first-run setup (setup.c)
+            subprocess.run([sys.executable, os.path.join(ROOT, 'port', 'tools', 'gen_hosttabs.py'), tabs] +
+                           ([os.path.join(retail, 'host')] if TARGET == 'retail' else []), check=True)
             extras = [os.path.join(ROOT, 'port', 'src', x) for x in
                       ('host_cpu.c', 'host_link.c', 'hw.c', 'hw_trap.c', 'hw_card.c', 'host_threads.c', 'vram.c', 'video.c', 'window.c', 'audio.c', 'snd.c', 'workers.c', 'gpu2d.c', 'gpu3d.c', 'platform_mem.c', 'loader.c', 'save.c', 'mic.c', 'setup.c', 'main.c')] + [gen, tabs]
             extras = [x for x in extras if os.path.exists(x)] + [x for x in os.environ.get('NDOGS_EXTRA_SRC', '').split(';') if x]
             hf = os.path.join(ROOT, 'port', 'hostfuncs')
             extras += [os.path.join(hf, x) for x in sorted(os.listdir(hf)) if x.endswith('.c')]
             for src in extras:
-                o = os.path.join(OBJDIR, 'port_' + os.path.basename(src)[:-2] + '.o')
+                o = os.path.join(OBJDIR, 'port_' + os.path.basename(src)[:-2] + SFX + '.o')
                 opt = '-O2' if os.path.basename(src) in FAST_SRC else GAME_OPT
                 if os.path.basename(src) == 'main.c':  # fallback data folder when started without --data (double-click)
-                    opt = [opt, '-DNDOGS_DEFAULT_DATA="%s"' % os.path.join(ROOT, 'extracted').replace('\\', '/')]
+                    data = os.path.join(ROOT, 'extracted', *(['retail'] if TARGET == 'retail' else []))
+                    opt = [opt, '-DNDOGS_DEFAULT_DATA="%s"' % data.replace('\\', '/')]
                 else:
                     opt = [opt]
+                if TARGET == 'retail':
+                    opt.append('-DNDOGS_RETAIL=1')
                 r = subprocess.run([args.cc] + FLAGS + opt + ['-c', src, '-o', o], capture_output=True, text=True)
                 if r.returncode:
                     f.write('port source failed: %s\n%s\n' % (os.path.relpath(src, ROOT), r.stderr[:2000]))

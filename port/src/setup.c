@@ -27,6 +27,7 @@ typedef unsigned char u8;
 typedef unsigned int u32;
 
 #define DEMO_CRC 0x8a03681au  /* Nintendogs (Europe) (Demo) (Kiosk), MD5 a190eca6a61b3c69ce48f076d2445eb8 */
+#define RETAIL_CRC 0x8e7faa00u  /* Nintendogs: Dachshund & Friends (Europe), full 64 MB dump */
 #define CARD_SIZE (64u << 20)
 
 extern const char *const ndogs_host_tables[][2];
@@ -164,7 +165,7 @@ static u8 *blz(const u8 *in, u32 n, u32 *out_n)
     return o;
 }
 
-static int extract_demo(const u8 *rom, const char *rom_path, const char *dir)
+static int extract_rom(const u8 *rom, const char *rom_path, const char *dir)
 {
     u32 a9o = rd32(rom + 0x20), a9r = rd32(rom + 0x28), a9s = rd32(rom + 0x2c);
     u32 ovo = rd32(rom + 0x50), ovs = rd32(rom + 0x54), fat = rd32(rom + 0x48);
@@ -879,6 +880,45 @@ const char *ndogs_setup(const char *found, const char *exe_dir, int have_data, i
     u8 *demo = 0, *retail = 0;
     u32 dn = 0, rn = 0;
     int i;
+#ifdef NDOGS_RETAIL
+    /* the retail build (port/tools/retail_match.py): everything comes from the Dachshund & Friends cartridge */
+    if (have_data)
+        return found;
+    if (!ndogs_host_tables[0][0]) {
+        message("This build of nintendogs_pc cannot set up its game data (it was built without extracted/; "
+                "see port/tools/gen_hosttabs.py). Start it with --data <data folder>.", 1);
+        return 0;
+    }
+    for (i = 1; i < argc; i++)
+        consider(argv[i]);
+    scan(exe_dir);
+    scan(".");
+    snprintf(dir, sizeof dir, "%s/extracted", exe_dir);
+    if (!retail_path[0]) {
+        message("Nintendogs needs your own copy of the game to run.\n\n"
+                "Put your Nintendogs: Dachshund & Friends (Europe) ROM (.nds) in the same folder as "
+                "nintendogs_pc.exe, then start it again.", 1);
+        return 0;
+    }
+    retail = load(retail_path, &rn);
+    if (!retail || crc32(retail, rn) != RETAIL_CRC) {
+        message("This Dachshund & Friends ROM is not the expected dump (the port needs the European cartridge, "
+                "a full 64 MB dump).", 1);
+        return 0;
+    }
+    {
+        char abs[1024];
+        printf("setup: extracting %s into %s\n", retail_path, dir);
+        full_path(retail_path, abs, sizeof abs);
+        if (extract_rom(retail, abs, dir)) {
+            message("Could not write the game data next to nintendogs_pc.exe. Is the folder writable?", 1);
+            return 0;
+        }
+    }
+    free(retail);
+    (void)demo, (void)dn;
+    return dir;
+#endif
     if (have_data && exists(found, "host/full.nds"))
         return found;
     for (i = 1; i < argc; i++)
@@ -913,7 +953,7 @@ const char *ndogs_setup(const char *found, const char *exe_dir, int have_data, i
         }
         printf("setup: extracting %s into %s\n", demo_path, dir);
         full_path(demo_path, abs, sizeof abs);
-        if (extract_demo(demo, abs, dir)) {
+        if (extract_rom(demo, abs, dir)) {
             message("Could not write the game data next to nintendogs_pc.exe. Is the folder writable?", 1);
             return 0;
         }

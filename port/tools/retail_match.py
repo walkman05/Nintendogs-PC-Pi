@@ -7,11 +7,14 @@ placed by order between anchors; what's left between two anchors is paired by or
 byte similarity score. Calls inside matched pairs are then checked: a demo call to X should go to X's retail match.
 
 Inputs (git-ignored, from the user's ROMs): extracted/config + extracted/rom (demo, extract_rom.py) and
-extracted/retail/config + extracted/retail/rom (dsd rom extract + dsd init on the retail ROM).
-Output: extracted/retail/match.txt, one line per demo function:
-  <demo module> <demo addr> <retail addr|-> <exact|order|similar:<score>|none> <size> [<retail size>]
+extracted/retail/config + extracted/retail/rom (dsd rom extract + dsd init on the retail ROM, run here if missing).
+Outputs (git-ignored), which make extracted/retail a data folder for the retail build (host_compile.py --target retail):
+  match.txt    one line per demo function:
+               <demo module> <demo addr> <retail addr|-> <exact|order|similar:<score>|none> <size> [<retail size>]
+  symbols.txt  the retail address of every func_/data_/bss_ name the C links against
+  host/        the loader tables (as extract_rom.py writes them), the cartridge header and the ROM's path
 
-usage: python port/tools/retail_match.py
+usage: python port/tools/retail_match.py --rom <Dachshund & Friends (E).nds> [--dsd <dsd>]
 """
 import collections, difflib, os, re, struct, sys
 
@@ -170,6 +173,19 @@ def match_module(d, r):
 
 
 def main():
+    import argparse
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from extract_rom import find_dsd, run, write_host_tables
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--rom', required=True)
+    ap.add_argument('--dsd')
+    args = ap.parse_args()
+    rdir = os.path.join(EX, 'retail')
+    if not os.path.exists(os.path.join(rdir, 'config', 'arm9', 'symbols.txt')):
+        dsd = find_dsd(args.dsd)
+        run([dsd, 'rom', 'extract', '-r', args.rom, '-o', os.path.join(rdir, 'rom')])
+        run([dsd, 'init', '-r', os.path.join(rdir, 'rom', 'config.yaml'), '-o', os.path.join(rdir, 'config'),
+             '-b', os.path.join(rdir, 'dsd-build')])
     names = ['main', 'itcm'] + ['ov%03d' % i for i in range(30)]
     out = []
     totals = collections.Counter()
@@ -213,13 +229,31 @@ def main():
           % (totals['demo'], totals['exact'], totals['order'], totals['similar'], totals['none']))
     with open(os.path.join(EX, 'retail', 'match.txt'), 'w') as f:
         f.write('\n'.join(out) + '\n')
-    data_map(results)
+    symbol_map(results)
+    # the loader's module list and pointer fix-ups for the retail images, the header and where the ROM is
+    write_host_tables(rdir, os.path.join(rdir, 'rom'), os.path.join(rdir, 'config'))
+    with open(args.rom, 'rb') as f, open(os.path.join(rdir, 'host', 'header.bin'), 'wb') as h:
+        h.write(f.read(0x200))
+    with open(os.path.join(rdir, 'host', 'rom_path.txt'), 'w') as f:
+        f.write(os.path.abspath(args.rom) + '\n')
 
 
-def data_map(results):
-    """demo -> retail data addresses: the same loaded address (literal pool word) in matching code gives a pair.
-    Covers what code refers to directly; checked for conflicts and against the data symbols the C uses."""
-    pairs = collections.defaultdict(collections.Counter)
+DATA_RE = re.compile(r'\b(?:data|bss)_(?:ov([0-9]+)_)?([0-9a-f]{8})(?:__\d+)?\b')
+
+
+def reloc_module(mod):
+    """dsd's target module ('main', 'itcm', 'dtcm', 'overlay(3)') as a module name, or None if ambiguous"""
+    m = re.match(r'overlay\((\d+)\)$', mod)
+    return 'ov%03d' % int(m.group(1)) if m else (mod if mod in ('main', 'itcm', 'dtcm') else None)
+
+
+def symbol_map(results):
+    """extracted/retail/symbols.txt: the retail address of every func_/data_/bss_ name the C links against.
+    Functions from the matches; data from the loaded addresses (literal-pool words) of matching code, per module,
+    or the same offset from the closest such address below (within 0x100, bytes checked where both are initialised
+    data); hardware and system-area addresses are the same in both."""
+    mods = {n: (d, r) for n, d, r, _, _, _ in results}
+    pairs = collections.defaultdict(collections.Counter)  # (module, demo addr) -> retail addrs
     for n, d, r, dsig, rsig, m in results:
         for i, s in enumerate(dsig):
             if i not in m or m[i][1].startswith('similar'):
@@ -227,34 +261,155 @@ def data_map(results):
             rl = {o: (t, mod) for o, k, t, mod in rsig[m[i][0]][2] if k == 'load'}
             for o, k, t, mod in s[2]:
                 if k == 'load' and o in rl:
-                    pairs[t][rl[o][0]] += 1
-    conflicts = {a: c for a, c in pairs.items() if len(c) > 1}
-    best = {a: c.most_common(1)[0][0] for a, c in pairs.items()}
-    # symbols the C uses (extract_rom.py: name, address, module) and how many have a retail address
-    used = []
+                    dm, rm = reloc_module(mod), reloc_module(rl[o][1])
+                    if dm and dm == rm:
+                        pairs[(dm, t)][rl[o][0]] += 1
+    conflicts = sum(len(c) > 1 for c in pairs.values())
+    best = {k: c.most_common(1)[0][0] for k, c in pairs.items()}
+    # changed functions: the n-th loaded address on each side, when both load the same number (lower priority)
+    weak = collections.defaultdict(collections.Counter)
+    for n, d, r, dsig, rsig, m in results:
+        for i, s in enumerate(dsig):
+            if i not in m or not m[i][1].startswith('similar'):
+                continue
+            dl = [(t, mod) for o, k, t, mod in s[2] if k == 'load']
+            rl = [(t, mod) for o, k, t, mod in rsig[m[i][0]][2] if k == 'load']
+            if len(dl) != len(rl):
+                continue
+            for (t, mod), (rt, rmod) in zip(dl, rl):
+                dm, rm = reloc_module(mod), reloc_module(rmod)
+                if dm and dm == rm and (dm, t) not in best:
+                    weak[(dm, t)][rt] += 1
+    for k, c in weak.items():
+        if len(c) == 1:
+            best[k] = next(iter(c))
+    bymod = collections.defaultdict(list)
+    for (mod, a) in best:
+        bymod[mod].append(a)
+    for v in bymod.values():
+        v.sort()
+    import bisect
+    known = {}
     for line in open(os.path.join(EX, 'data_symbols.txt')):
         p = line.split()
-        if len(p) >= 3:
-            used.append((p[0], int(p[1], 16), p[2]))
-    direct = [u for u in used if u[1] in best]
-    # a symbol inside a mapped object: same offset from the nearest mapped address below (same delta), if close
-    keys = sorted(best)
-    import bisect
-    near = []
-    for u in used:
-        if u[1] in best:
-            continue
-        k = bisect.bisect_right(keys, u[1]) - 1
-        if k >= 0 and u[1] - keys[k] < 0x100:
-            near.append(u)
-    io = [u for u in used if u[1] >= 0x04000000 or 0x027ff000 <= u[1] < 0x02800000]  # hardware/system area: same
-    print('data: %d demo addresses paired with retail ones (%d with conflicting pairs); C data symbols: %d, '
-          'direct %d, within 0x100 of a pair %d, hardware/system %d, other %d'
-          % (len(best), len(conflicts), len(used), len(direct), len(near), len(io),
-             len(used) - len(direct) - len(near) - len(io)))
-    with open(os.path.join(EX, 'retail', 'data_map.txt'), 'w') as f:
-        for a in keys:
-            f.write('0x%08x 0x%08x%s\n' % (a, best[a], ' conflict' if a in conflicts else ''))
+        if len(p) >= 3 and p[2].startswith('arm9'):
+            known[p[0]] = 'main' if p[2] == 'arm9' else p[2].split('/')[-1]
+
+    fpairs = collections.defaultdict(list)  # module -> [(demo function, retail function)] with the same code
+    for n, d, r, dsig, rsig, m in results:
+        for i, s in enumerate(dsig):
+            if i in m and not m[i][1].startswith('similar'):
+                fpairs[n].append((s[0], rsig[m[i][0]][0]))
+    masked_cache = {}
+
+    def masked_data(md):
+        """the module's bytes with every aligned word that looks like a DS RAM address zeroed"""
+        if id(md) not in masked_cache:
+            b = bytearray(md.data)
+            for o in range(0, len(b) - 3, 4):
+                w = struct.unpack_from('<I', b, o)[0]
+                if 0x01ff8000 <= w < 0x02400000 or 0x027c0000 <= w < 0x02800000:
+                    b[o:o + 4] = b'\0\0\0\0'
+            masked_cache[id(md)] = bytes(b)
+        return masked_cache[id(md)]
+
+    def initialised(side, mod, a):
+        mo = mods.get(mod)
+        if not mo:
+            return None
+        md = mo[0] if side == 0 else mo[1]
+        o = a - md.base
+        return md.data[o:o + 8] if 0 <= o and o + 8 <= len(md.data) else None
+
+    def resolve(name, ov, a):
+        if a >= 0x027ff000 or a < 0x01ff8000:
+            return a, 'same'
+        if ov is not None:
+            cands = ['ov%03d' % int(ov)]
+        elif name in known:
+            cands = [known[name]]
+        elif a < 0x02000000:
+            cands = ['itcm']
+        elif 0x027c0000 <= a < 0x027c4000:
+            cands = ['dtcm']
+        else:
+            cands = ['main'] + ['ov%03d' % i for i in range(30)]
+        found = set()
+        for mod in cands:
+            if (mod, a) in best:
+                found.add((best[(mod, a)], 'direct'))
+                continue
+            v = bymod.get(mod, [])
+            k = bisect.bisect_right(v, a) - 1
+            if k >= 0 and a - v[k] < 0x100:
+                ra = best[(mod, v[k])] + (a - v[k])
+                db, rb = initialised(0, mod, a), initialised(1, mod, ra)
+                if db is None or rb is None or db == rb:
+                    found.add((ra, 'near'))
+        if len(set(f[0] for f in found)) == 1:
+            return found.pop()
+        if found:
+            return None, 'ambiguous'
+        for mod in cands:
+            mo = mods.get(mod)
+            if not mo:
+                continue
+            if a == mo[0].base:
+                return mo[1].base, 'base'
+            # inside a function with the same code (a jump table or literal pool): the same offset in its match
+            for f, rf in fpairs.get(mod, ()):
+                if f[0] <= a < f[0] + f[2] and f[2] == rf[2]:
+                    return rf[0] + (a - f[0]), 'in-function'
+        # constant data that no matching code loads directly (tables, strings): the demo's bytes from that address,
+        # found once in the retail module (the shortest window that is unique, aligned like the original), with
+        # pointer-sized words left out of the comparison (their targets moved)
+        for mod in cands:
+            mo = mods.get(mod)
+            if not mo:
+                continue
+            o = a - mo[0].base
+            dm, rm = masked_data(mo[0]), masked_data(mo[1])
+            for n in (16, 32, 64, 128):
+                w = dm[o:o + n]
+                if len(w) < n or w.count(w[:1]) == n:
+                    break
+                hits = [h for h in re.finditer(re.escape(w), rm) if h.start() % 4 == o % 4]
+                if len(hits) == 1:
+                    return mo[1].base + hits[0].start(), 'bytes'
+                if not hits:
+                    break
+        return None, 'none'
+
+    names = set()
+    for base in ('src', os.path.join('port', 'hostfuncs')):
+        for dp, _, fs in os.walk(os.path.join(ROOT, base)):
+            for fn in fs:
+                if fn.endswith('.c'):
+                    names.update(m.group(0) for m in DATA_RE.finditer(open(os.path.join(dp, fn), errors='replace').read()))
+    out, how, missing = [], collections.Counter(), []
+    for name in sorted(names):
+        m = DATA_RE.match(name)
+        ra, h = resolve(name, m.group(1), int(m.group(2), 16))
+        how[h] += 1
+        if ra is None:  # only demo-only code uses these (e.g. the kiosk reset): keep the demo address
+            missing.append(name)
+            out.append('%s 0x%s unresolved' % (name, m.group(2)))
+        else:
+            out.append('%s 0x%08x' % (name, ra))
+    # functions: every matched demo function under the name the C gives it
+    nf = 0
+    for n, d, r, dsig, rsig, m in results:
+        for i, s in enumerate(dsig):
+            if i in m:
+                a = s[0][0]
+                name = 'func_%s%08x' % ('' if n in ('main', 'itcm') else n + '_', a)
+                out.append('%s 0x%08x' % (name, rsig[m[i][0]][0][0]))
+                nf += 1
+    print('data: %d (module, address) pairs, %d conflicting; %d data names: %s; unresolved: %s'
+          % (len(best), conflicts, len(names), dict(how), ' '.join(missing) or 'none'))
+    print('functions: %d names with a retail address' % nf)
+    with open(os.path.join(EX, 'retail', 'symbols.txt'), 'w') as f:
+        f.write('\n'.join(out) + '\n')
 
 
 if __name__ == '__main__':

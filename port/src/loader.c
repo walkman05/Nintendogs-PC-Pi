@@ -9,7 +9,8 @@
 #include "loader.h"
 
 #define MAX_MODULES 40
-#define OV_REGION_LO 0x0215c000u
+
+unsigned int ndogs_ov_base, ndogs_arena_main_lo, ndogs_arena_itcm_lo;  /* set from modules.txt */
 
 typedef struct {
     char name[16];
@@ -200,11 +201,24 @@ int ndogs_load_main(const char *dir)
         module_count++;
     }
     fclose(f);
+    /* the build's memory layout: where the overlays go and where the arenas start after the overlays / ITCM code
+     * (link-time constants in the original, different in each build of the game; func_020801d8) */
+    ndogs_ov_base = 0x02400000u;
+    for (i = 0; i < module_count; i++)
+        if (!strncmp(modules[i].name, "ov", 2)) {
+            if (modules[i].base < ndogs_ov_base)
+                ndogs_ov_base = modules[i].base;
+            if (modules[i].bss_end > ndogs_arena_main_lo)
+                ndogs_arena_main_lo = modules[i].bss_end;
+        }
     for (i = 0; i < 3; i++) {
         Module *m = module_named(i == 0 ? "main" : i == 1 ? "itcm" : "dtcm");
-        unsigned int max = i == 0 ? 0x0215c000u - 0x02000000u : i == 1 ? 0x8000u : 0x4000u;
-        if (!m || read_file(m->file, (void *)m->base, max) < 0)
+        unsigned int max = i == 0 ? ndogs_ov_base - 0x02000000u : i == 1 ? 0x8000u : 0x4000u;
+        int n;
+        if (!m || (n = read_file(m->file, (void *)m->base, max)) < 0)
             return -1;
+        if (i == 1)
+            ndogs_arena_itcm_lo = m->base + (unsigned int)n;
         if (m->bss_end > m->bss_start)
             memset((void *)m->bss_start, 0, m->bss_end - m->bss_start);
     }

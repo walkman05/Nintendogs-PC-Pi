@@ -589,7 +589,8 @@ extern void host_ctx_load(u32 *ctx);
 static void irq_exit_reschedule(void)
 {
     volatile u16 *irqq = (volatile u16 *)0x027c0000u;
-    u8 *info = (u8 *)0x02155cf8u;
+    extern u8 data_02155cf8[];  /* the SDK's thread info (its address differs between builds) */
+    u8 *info = data_02155cf8;
     u8 *t, *cur;
     if (*irqq) {
         u32 bits = *irqq;

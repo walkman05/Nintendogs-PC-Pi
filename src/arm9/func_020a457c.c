@@ -56,8 +56,17 @@ void func_020a457c(void)
     func_020066c8(7, data_021422a8, 8);
     func_0208e0d0();
     func_0208c3f4(piVar2);
+#ifdef NDOGS_PC
+    {
+        /* func_0208ddac is a trampoline to the ini reader func_0208ddb8, whose argument is func_0208c3e0's result
+         * left in r0 */
+        extern void func_0208ddb8(u8 *text);
+        func_0208ddb8((u8 *)((u32(*)(void))func_0208c3e0)());
+    }
+#else
     func_0208c3e0();
     func_0208ddac();
+#endif
     func_020070c0(piVar2);
     func_020963b0(piVar2);
     func_0209a4f0(piVar2);

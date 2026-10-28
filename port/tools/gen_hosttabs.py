@@ -2,7 +2,7 @@
 user's demo ROM) into the exe as strings, so the first-run setup (port/src/setup.c) can write them out without
 Python or dsd. The output goes to the object folder, never into the repository.
 
-usage: python port/tools/gen_hosttabs.py <out.c>
+usage: python port/tools/gen_hosttabs.py <out.c> [<host tables folder>]
 """
 import os, sys
 
@@ -17,7 +17,8 @@ def c_string(text):
 
 
 def main():
-    host = os.path.join(ROOT, 'extracted', 'host')
+    # optional second argument: another build's tables (extracted/retail/host, from retail_match.py)
+    host = sys.argv[2] if len(sys.argv) > 2 else os.path.join(ROOT, 'extracted', 'host')
     names = []  # no extracted data (e.g. CI): an exe without first-run setup
     if os.path.exists(os.path.join(host, 'modules.txt')):
         names = ['modules.txt'] + sorted(n for n in os.listdir(host) if n.startswith('fix_') and n.endswith('.txt'))
