@@ -15,7 +15,8 @@ REGIONS = [(0x01ff8000, 0x8000), (0x02000000, 0x400000), (0x027c0000, 0x10000), 
            (0x037f0000, 0x10000)]
 STACK = 0x0e000000
 # written asynchronously while the host routine runs (interrupts, the ARM7 stand-in): not the routine's doing
-ASYNC = [(0x02155fdc, 1, 'OS tick counter'), (0x027fffa8, 8, 'ARM7 touch/keys')]
+ASYNC = [(0x02155fdc, 1, 'OS tick counter'), (0x027fffa8, 8, 'ARM7 touch/keys'),
+         (0x021561e0, 0x280, 'SNDSharedWork (the sound driver stand-in: player ticks, command tags)')]
 ARGS = [UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3]
 
 
@@ -82,15 +83,18 @@ def code_pointers(arm, a, h, off, n):
 
 def replay(path, arm):
     name = re.match(r'cap_(func_\w+?)_(\d+)\.bin$', os.path.basename(path)).group(1)
-    (bh, before), (ah, after) = load(path)
+    try:
+        (bh, before), (ah, after) = load(path)
+    except struct.error:
+        return name, 'incomplete capture (the call never returned while the game ran)', None
     uc = arm.uc
     uc.context_restore(arm.snapshot)
     for base, data in before.items():
-        page = base & ~0xfff
-        try:
-            uc.mem_map(page, ((base + len(data) + 0xfff) & ~0xfff) - page, UC_PROT_ALL)
-        except Exception:
-            pass  # already mapped
+        for page in range(base & ~0xfff, base + len(data), 0x1000):
+            try:
+                uc.mem_map(page, 0x1000, UC_PROT_ALL)
+            except Exception:
+                pass  # already mapped
         uc.mem_write(base, data)
     uc.reg_write(UC_ARM_REG_CPSR, 0x1f)
     args = bh[4:16]
@@ -102,6 +106,7 @@ def replay(path, arm):
     uc.reg_write(UC_ARM_REG_LR, STOP)
     try:
         pc = addr_of(name)
+        pc |= pc in arm.thumb
         for _ in range(100000):
             arm.redirect = None
             uc.emu_start(pc, STOP, count=50000000)
@@ -202,7 +207,7 @@ def main():
     def enter_host(uc, addr, size, _):
         for a in (addr, addr + 1, addr + 2, addr + 3):
             if a in funcs:
-                arm.redirect = funcs[a]
+                arm.redirect = funcs[a] | (funcs[a] in arm.thumb)
                 uc.emu_stop()
                 return
         arm.redirect = None

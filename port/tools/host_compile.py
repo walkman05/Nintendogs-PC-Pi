@@ -62,60 +62,82 @@ def windows_target(cc):
 def capture_wrappers(names):
     """C for --wrap wrappers: NDOGS_CAPTURE=<name>@<call>[,...] dumps DS memory and the arguments before and after
     that call of that routine to cap_<name>_<call>.bin (read by port/tools/capdiff.py)"""
-    c = ['#include <stdio.h>', '#include <stdlib.h>', '#include <string.h>',
+    c = ['#include <stdio.h>', '#include <stdlib.h>', '#include <string.h>', '#ifdef _WIN32', '#include <windows.h>', '#endif',
          'typedef unsigned int u32; typedef unsigned long long u64;',
          'static const u32 regions[][2] = { {0x01ff8000u, 0x8000u}, {0x02000000u, 0x400000u}, '
          '{0x027c0000u, 0x10000u}, {0x027f0000u, 0x10000u}, {0x037f0000u, 0x10000u} };',
-         'static int cap_want(const char *name, int n)',
-         '{',
-         '    const char *p = getenv("NDOGS_CAPTURE");',
-         '    size_t l = strlen(name);',
-         '    while (p && (p = strstr(p, name))) {',
-         '        if (p[l] == 64 && atoi(p + l + 1) == n) return 1;',
-         '        p += l;',
+         'static int cap_want(const char *name, int n, int *want)',
+         '{  /* want[0]: -1 until parsed, then the number of wanted calls in want[1..8] */',
+         '    int i;',
+         '    if (want[0] < 0) {',
+         '        static char *spec; const char *p;',
+         '        if (!spec) {  /* NDOGS_CAPTURE=<list> or @<file with the list> */',
+         '            const char *e = getenv("NDOGS_CAPTURE"); FILE *f; long len;',
+         '            spec = (char *)"";',
+         '            if (e && e[0] == 64 && (f = fopen(e + 1, "rb"))) { fseek(f, 0, 2); len = ftell(f); fseek(f, 0, 0); spec = (char *)calloc(1, len + 1); fread(spec, 1, len, f); fclose(f); }',
+         '            else if (e) spec = (char *)e;',
+         '        }',
+         '        p = spec;',
+         '        size_t l = strlen(name);',
+         '        want[0] = 0;',
+         '        while (p && (p = strstr(p, name))) {',
+         '            if (p[l] == 64 && want[0] < 8) want[++want[0]] = atoi(p + l + 1);',
+         '            p += l;',
+         '        }',
          '    }',
+         '    for (i = 1; i <= want[0]; i++) if (want[i] == n) return 1;',
          '    return 0;',
          '}',
-         'static FILE *cap_file, *cap_trace;',
-         'static int cap_depth;  /* > 0 while a captured call runs: wrapped calls are traced */',
+         'static FILE *cap_trace;',
+         'static int cap_depth;  /* > 0 while a captured call runs: wrapped calls are traced (for the outermost) */',
+         'static int cap_lines;  /* traced calls so far (the trace stops at 20000) */',
          'static u32 cap_obj;    /* first argument of the captured call: dumped (0xa00 bytes) at each traced call */',
          'static int cap_obj_ok(void) { return cap_obj >= 0x01ff8000u && cap_obj <= 0x02400000u - 0xa00u; }  /* a pointer into DS RAM (not a number) */',
          'static void cap_obj_dump(void) { unsigned i; for (i = 0; i < 0xa00; i++) fprintf(cap_trace, "%02x", cap_obj_ok() ? ((unsigned char *)cap_obj)[i] : 0); fputc(10, cap_trace); }',
-         'static void cap_dump(const char *name, int n, const u32 *a, int after, u64 ret)',
+         'static void cap_dump(const char *name, int n, const u32 *a, int after, u64 ret, FILE **pf)  /* one file per capture: captures nest */',
          '{',
          '    unsigned i;',
          '    u32 hdr[16];',
          '    if (!after) {',
          '        char fn[96];',
          '        snprintf(fn, sizeof fn, "cap_%s_%d.bin", name, n);',
-         '        cap_file = fopen(fn, "wb");',
+         '        *pf = fopen(fn, "wb");',
          '    }',
-         '    if (!cap_file) return;',
+         '    if (!*pf) return;',
          '    hdr[0] = 0x50414344u; hdr[1] = (u32)after; hdr[2] = (u32)ret; hdr[3] = (u32)(ret >> 32);',
          '    memcpy(hdr + 4, a, 48);',
-         '    fwrite(hdr, 4, 16, cap_file);',
-         '    for (i = 0; i < sizeof regions / sizeof regions[0]; i++) fwrite((void *)regions[i][0], 1, regions[i][1], cap_file);',
+         '    fwrite(hdr, 4, 16, *pf);',
+         '    for (i = 0; i < sizeof regions / sizeof regions[0]; i++) fwrite((void *)regions[i][0], 1, regions[i][1], *pf);',
          '    { /* the caller frames on the host stack (structures passed by pointer live there) */',
          '        u32 win[2]; win[0] = (u32)a; win[1] = 0x2000;',
-         '        fwrite(win, 4, 2, cap_file); fwrite((void *)win[0], 1, win[1], cap_file); }',
+         '#ifdef _WIN32',
+         '        { MEMORY_BASIC_INFORMATION m; /* a fiber stack may end sooner */',
+         '          if (VirtualQuery(a, &m, sizeof m) && (u32)m.BaseAddress + m.RegionSize - win[0] < win[1]) win[1] = (u32)m.BaseAddress + m.RegionSize - win[0]; }',
+         '#endif',
+         '        fwrite(win, 4, 2, *pf); fwrite((void *)win[0], 1, win[1], *pf); }',
          '    { /* the hardware registers as the game sees them (POWCNT, timers, ...) */',
          '        extern void hw_io_snapshot(unsigned char *io); static unsigned char io[0x2000]; u32 win[2];',
          '        hw_io_snapshot(io); win[0] = 0x04000000u; win[1] = 0x2000;',
-         '        fwrite(win, 4, 2, cap_file); fwrite(io, 1, 0x2000, cap_file); }',
-         '    if (after) { fclose(cap_file); cap_file = 0; fprintf(stderr, "captured %s call %d%c", name, n, 10); }',
+         '        fwrite(win, 4, 2, *pf); fwrite(io, 1, 0x2000, *pf); }',
+         '    if (after) { fclose(*pf); *pf = 0; fprintf(stderr, "captured %s call %d%c", name, n, 10); }',
          '}']
     for n in names:
         c += ['extern u64 __real_%s(u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32);' % n,
               'u64 __wrap_%s(u32 a0, u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7, u32 a8, u32 a9, u32 a10, u32 a11)' % n,  # forwards up to 12 arguments
               '{',
-              '    static int calls;',
+              '    static int calls, want[9] = { -1 };',
               '    u32 *a = &a0;  /* the incoming arguments, in the caller frame */',
-              '    int hit = cap_want("%s", ++calls) && !cap_depth;  /* not inside another captured call */' % n,
+              '    int hit = cap_want("%s", ++calls, want);' % n,
+              '    FILE *cf = 0;',
               '    u64 r;',
-              '    if (cap_depth && cap_trace) { fprintf(cap_trace, "%s %%08x %%08x %%08x %%08x ", a0, a1, a2, a3); cap_obj_dump(); }' % n,
-              '    if (hit) { char fn[96]; snprintf(fn, sizeof fn, "cap_%s_%%d.trace", calls); cap_trace = fopen(fn, "w"); cap_obj = a0; cap_dump("%s", calls, a, 0, 0); cap_depth++; }' % (n, n),
+              '    if (cap_depth && cap_trace && cap_lines++ < 20000) { fprintf(cap_trace, "%s %%08x %%08x %%08x %%08x ", a0, a1, a2, a3); cap_obj_dump(); }' % n,
+              '    if (hit) {',
+              '        char fn[96]; snprintf(fn, sizeof fn, "cap_%s_%%d.trace", calls);' % n,
+              '        if (!cap_depth) { cap_trace = getenv("NDOGS_CAPTRACE") ? fopen(fn, "w") : 0; cap_lines = 0; cap_obj = a0; }  /* NDOGS_CAPTRACE=1: trace (capdiff --trace) */',
+              '        cap_dump("%s", calls, a, 0, 0, &cf); cap_depth++;' % n,
+              '    }',
               '    r = __real_%s(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11);' % n,
-              '    if (hit) { cap_depth--; cap_dump("%s", calls, a, 1, r); if (cap_trace) fclose(cap_trace); cap_trace = 0; }' % n,
+              '    if (hit) { cap_depth--; cap_dump("%s", calls, a, 1, r, &cf); if (!cap_depth && cap_trace) { fclose(cap_trace); cap_trace = 0; } }' % n,
               '    return r;',
               '}']
     return '\n'.join(c) + '\n'
@@ -144,7 +166,10 @@ def link(cc, objs, out):
                 f.write('.globl %s%s\n%s%s:\n    jmp %s%s\n' % (us, a, us, a, us, b))
     subprocess.run([cc, '-m32', '-c', stub, '-o', stub[:-2] + '.o'], check=True)
     objs = list(objs) + [stub[:-2] + '.o']
-    wrap = [x for x in os.environ.get('NDOGS_WRAP', '').split(',') if x]
+    wrap = os.environ.get('NDOGS_WRAP', '')
+    if wrap.startswith('@'):  # a file with the list (thousands of names don't fit in an environment variable)
+        wrap = open(wrap[1:]).read()
+    wrap = [x for x in re.split(r'[,\s]+', wrap) if x]
     if wrap:  # capture build for port/tools/capdiff.py: wrap these routines (see capture_wrappers)
         wsrc = os.path.join(OBJDIR, 'capture_wraps.c')
         open(wsrc, 'w').write(capture_wrappers(wrap))
@@ -152,9 +177,9 @@ def link(cc, objs, out):
         objs.append(wsrc[:-2] + '.o')
     rsp = os.path.join(OBJDIR, 'objs.rsp')
     with open(rsp, 'w') as f:
-        f.write('\n'.join(o.replace('\\', '/') for o in objs))
+        f.write('\n'.join([o.replace('\\', '/') for o in objs] + ['-Wl,--wrap=' + w for w in wrap]))
     # fixed load address (no ASLR): keeps the program clear of the DS address range and makes the map usable
-    flags = ['-m32', '-Wl,-Map=' + out + '.map'] + ['-Wl,--wrap=' + w for w in wrap] + (['-Wl,--disable-dynamicbase', '-Wl,--image-base=0x10000000'] if win else ['-no-pie', '-Wl,-Ttext-segment=0x10000000'])
+    flags = ['-m32', '-Wl,-Map=' + out + '.map'] + (['-Wl,--disable-dynamicbase', '-Wl,--image-base=0x10000000'] if win else ['-no-pie', '-Wl,-Ttext-segment=0x10000000'])
     libs = [] if win else ['-ldl', '-lpthread']  # dlopen (ALSA, X11), worker threads
     r = subprocess.run([cc] + flags + ['@' + rsp, script, '-o', out] + libs,
                        capture_output=True, text=True)

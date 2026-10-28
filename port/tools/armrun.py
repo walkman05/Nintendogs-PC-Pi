@@ -5,7 +5,7 @@ ARM9 main RAM (arm9.bin at 0x02000000), ITCM (0x01ff8000) and DTCM (0x027e0000) 
 hardware divider and square root (0x04000280-0x040002bc) are modelled, since the runtime uses them. A call puts up
 to four arguments in r0-r3, returns to a stop address in lr, and gives back r0 and r1."""
 import os
-from unicorn import Uc, UC_ARCH_ARM, UC_MODE_ARM, UC_HOOK_MEM_WRITE, UC_HOOK_CODE, UC_PROT_ALL
+from unicorn import Uc, UC_ARCH_ARM, UC_MODE_ARM, UC_HOOK_MEM_WRITE, UC_HOOK_MEM_READ, UC_HOOK_CODE, UC_PROT_ALL
 from unicorn.arm_const import UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3, UC_ARM_REG_SP, \
     UC_ARM_REG_LR, UC_ARM_REG_PC, UC_ARM_REG_CPSR, UC_ARM_REG_C1_C0_2
 
@@ -35,6 +35,10 @@ class Arm:
             uc.mem_write(base, open(os.path.join(ROM, name), 'rb').read())
         uc.mem_write(STOP, b'\xfe\xff\xff\xea')  # b . (never reached: emulation stops at STOP)
         uc.hook_add(UC_HOOK_MEM_WRITE, self._io_write, begin=0x04000280, end=0x040002bf)
+        uc.hook_add(UC_HOOK_MEM_WRITE, self._dma_write, begin=0x040000b0, end=0x040000df)
+        # a transfer already running when the replay starts (e.g. GX FIFO DMA) completes when its control is read
+        uc.hook_add(UC_HOOK_MEM_READ, lambda uc, acc, a, size, v, u: self._w32(0x040000b8 + (a - 0x040000b0) // 12 * 12,
+                    self._r32(0x040000b8 + (a - 0x040000b0) // 12 * 12) & 0x7fffffff), begin=0x040000b0, end=0x040000df)
         self._hook_unaligned()
         self.snapshot = uc.context_save()
         self.ram = bytes(uc.mem_read(0x02000000, 0x400000))
@@ -49,6 +53,7 @@ class Arm:
         md = self._cs = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_ARM)
         md.detail = True
         starts, rot = {}, set()
+        self.thumb = set()  # addresses of Thumb functions (entered with bit 0 set)
         for line in open(os.path.join(ROOT, 'functions.csv')):
             f = line.split(',')
             if len(f) > 3 and f[3].startswith('0x'):
@@ -56,9 +61,12 @@ class Arm:
         for p in glob.glob(os.path.join(ROOT, 'extracted', 'asm_all', '**', '*.s'), recursive=True):
             cur = None
             for line in open(p, encoding='utf-8', errors='replace'):
-                m = re.match(r'\s*arm_func_start (\S+)', line)
+                m = re.match(r'\s*(arm|thumb)_func_start (\S+)', line)
                 if m:
-                    cur = m.group(1)
+                    cur = m.group(2) if m.group(1) == 'arm' else None
+                    t = re.search(r'([0-9a-f]{8})$', m.group(2))
+                    if m.group(1) == 'thumb' and t:
+                        self.thumb.add(int(t.group(1), 16))
                 elif cur and re.search(r', ror (r\d+|ip|lr)\s*$', line):
                     rot.add(cur)
         order = sorted(starts.values())
@@ -128,6 +136,29 @@ class Arm:
             self._div()
         elif 0x040002b0 <= address < 0x040002c0:
             self._sqrt()
+
+    def _dma_write(self, uc, access, address, size, value, user):
+        """DMA channels 0-3: a write that sets the enable bit runs an immediate transfer at once; other start modes
+        (VBlank, HBlank, display, card, GX FIFO) are treated as done (their targets are not modelled). Either way the
+        enable bit clears, so the SDK's busy-wait loops end."""
+        uc.mem_write(address, (value & ((1 << (size * 8)) - 1)).to_bytes(size, 'little'))
+        ch = (address - 0x040000b0) // 12
+        base = 0x040000b0 + ch * 12
+        cnt = self._r32(base + 8)
+        if not cnt >> 31:
+            return
+        src, dst = self._r32(base), self._r32(base + 4)
+        n = cnt & 0x1fffff or 0x200000
+        unit = 4 if cnt >> 26 & 1 else 2
+        if cnt >> 27 & 7 == 0:
+            step = {0: unit, 1: -unit, 2: 0, 3: unit}
+            ds, ss = step[cnt >> 21 & 3], step[cnt >> 23 & 3]
+            for i in range(min(n, 0x10000)):
+                try:
+                    uc.mem_write(dst + i * ds, bytes(uc.mem_read(src + i * ss, unit)))
+                except Exception:
+                    break  # an unmodelled target (VRAM banks, GX FIFO): nothing to compare there
+        self._w32(base + 8, cnt & 0x7fffffff)
 
     def _div(self):
         mode = self._r32(0x04000280) & 3
