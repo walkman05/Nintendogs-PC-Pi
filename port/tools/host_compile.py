@@ -104,8 +104,8 @@ def capture_wrappers(names):
          '    if (after) { fclose(cap_file); cap_file = 0; fprintf(stderr, "captured %s call %d%c", name, n, 10); }',
          '}']
     for n in names:
-        c += ['extern u64 __real_%s(u32, u32, u32, u32, u32, u32, u32, u32);' % n,
-              'u64 __wrap_%s(u32 a0, u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7)' % n,
+        c += ['extern u64 __real_%s(u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32);' % n,
+              'u64 __wrap_%s(u32 a0, u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7, u32 a8, u32 a9, u32 a10, u32 a11)' % n,  # forwards up to 12 arguments
               '{',
               '    static int calls;',
               '    u32 *a = &a0;  /* the incoming arguments, in the caller frame */',
@@ -113,7 +113,7 @@ def capture_wrappers(names):
               '    u64 r;',
               '    if (cap_depth && cap_trace) { fprintf(cap_trace, "%s %%08x %%08x %%08x %%08x ", a0, a1, a2, a3); cap_obj_dump(); }' % n,
               '    if (hit) { char fn[96]; snprintf(fn, sizeof fn, "cap_%s_%%d.trace", calls); cap_trace = fopen(fn, "w"); cap_obj = a0; cap_dump("%s", calls, a, 0, 0); cap_depth++; }' % (n, n),
-              '    r = __real_%s(a0, a1, a2, a3, a4, a5, a6, a7);' % n,
+              '    r = __real_%s(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11);' % n,
               '    if (hit) { cap_depth--; cap_dump("%s", calls, a, 1, r); if (cap_trace) fclose(cap_trace); cap_trace = 0; }' % n,
               '    return r;',
               '}']
