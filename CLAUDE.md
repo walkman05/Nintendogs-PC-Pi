@@ -234,6 +234,20 @@ default on; `--demo` restores the kiosk) lifts the gates behind `#ifdef NDOGS_PC
   <data>/save/nintendogs.sav at chip addresses: func_02096880 reads both copies, func_02097608 (the write task;
   entries {chip address, copy A, copy B, length, desc}) writes where retail starts each card write.
 
+## Retail retarget (in progress)
+Goal: run on the retail Dachshund & Friends (E) cartridge alone (the demo ROM no longer needed). The retail
+build is nearly the same code at other addresses. `extracted/retail/` holds its `dsd rom extract` (rom/) and
+`dsd init` (config/) output. `port/tools/retail_match.py` pairs functions by their bytes with dsd's relocations
+masked (unique exact matches as anchors, repeated code by order between anchors, the rest by order + similarity),
+then data addresses through the literal-pool words of matched code; output `extracted/retail/match.txt` and
+`data_map.txt` (git-ignored). Status: of 8,647 demo functions 6,533 exact + 2,012 same code placed by order,
+56 changed (similar), 46 with no counterpart (41 main, 5 itcm), 27 retail-only in main; calls in matched code
+agree (1 mismatch to check). Data: 3,386 addresses paired, no conflicts; of the 2,503 data symbols the C uses,
+2,441 map directly, 33 lie within 0x100 of a mapped address, 26 others (some are constants, not addresses).
+Next: the remaining data symbols; build-time remapping (function table, data symbol addresses and loader
+fix-ups for the retail layout) and setup from the retail ROM; decompile the changed / retail-only functions
+(the save code among them); drop the demo gates in a retail build.
+
 ## Build
 ```
 cmake -S . -B build -A Win32                 # Windows (Visual Studio)
