@@ -52,12 +52,12 @@ static const s16 sine32[32] = { 0, 4875, 9564, 13883, 17670, 20785, 23097, 24519
 
 static void build(void)
 {
-    u32 w0 = SWAR + 0x40, w1 = SWAR + 0x400, a, i, p = SSEQ, t1;
+    u32 w0 = SWAR + 0x80, w1 = SWAR + 0x400, a, i, p = SSEQ, t1;
     int pred = 0, idx = 0;
-    /* wave archive: 2 waves */
-    w32(SWAR + 0x18, 2);
-    w32(SWAR + 0x1c, w0 - SWAR);
-    w32(SWAR + 0x20, w1 - SWAR);
+    /* wave archive (SNDWaveArc: headers, link pointer, 7 reserved words, count @0x38, offsets @0x3c): 2 waves */
+    w32(SWAR + 0x38, 2);
+    w32(SWAR + 0x3c, w0 - SWAR);
+    w32(SWAR + 0x40, w1 - SWAR);
     /* wave 0: PCM16, 32-sample sine looped, 14080 Hz (A4 = 440 Hz) */
     w8(w0, 1); w8(w0 + 1, 1); w16(w0 + 2, 14080); w16(w0 + 4, 16756991 / 14080); w16(w0 + 6, 0); w32(w0 + 8, 16);
     for (i = 0; i < 32; i++) w16(w0 + 12 + i * 2, (u16)sine32[i]);

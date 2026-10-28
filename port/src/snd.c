@@ -20,6 +20,8 @@
  * small series at init. */
 #include "snd.h"
 #include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 #define NV 16          /* voices (hardware channels) */
 #define NP 16          /* players */
@@ -540,16 +542,20 @@ static u32 wave_addr(u32 bank, int arc_no, u32 wave_no)
     if (arc_no > 3 || !mem_ok(bank + 0x18 + arc_no * 8, 4))
         return 0;
     arc = m32(bank + 0x18 + arc_no * 8);
-    if (!mem_ok(arc, 0x1c))
+    /* SNDWaveArc in memory: file + block headers (0x18), link pointer, 7 reserved words, wave count @0x38,
+     * wave offsets @0x3c */
+    if (!mem_ok(arc, 0x3c))
         return 0;
-    cnt = m32(arc + 0x18);
-    if (wave_no >= cnt || !mem_ok(arc + 0x1c + wave_no * 4, 4))
+    cnt = m32(arc + 0x38);
+    if (wave_no >= cnt || !mem_ok(arc + 0x3c + wave_no * 4, 4))
         return 0;
-    off = m32(arc + 0x1c + wave_no * 4);
+    off = m32(arc + 0x3c + wave_no * 4);
     if (!off)
         return 0;
     return off < 0x02000000u ? arc + off : off;
 }
+
+static int s_notelog;
 
 /* ---- sequences ------------------------------------------------------------------------------------------------ */
 static void note_on(int pn, Track *t, int ti, int key, int vel, s32 len)
@@ -568,12 +574,18 @@ static void note_on(int pn, Track *t, int ti, int key, int vel, s32 len)
     } else {
         Inst in;
         int prio = p->prio + t->prio, kind, ok;
-        if (!inst_lookup(p->bank, t->prg, key, &in))
+        if (!inst_lookup(p->bank, t->prg, key, &in)) {
+            if (s_notelog)
+                fprintf(stderr, "note p%d t%d prg %d key %d: no instrument\n", pn, ti, t->prg, key);
             return;
+        }
         kind = in.type == 2 ? K_PSG : in.type == 3 ? K_NOISE : K_PCM;
         v = voice_alloc(kind, prio > 255 ? 255 : prio);
-        if (!v)
+        if (!v) {
+            if (s_notelog)
+                fprintf(stderr, "note p%d t%d prg %d key %d: no free voice (prio %d)%c", pn, ti, t->prg, key, prio, 10);
             return;
+        }
         if (in.type == 1)
             ok = wave_setup(v, wave_addr(p->bank, in.wave[1], in.wave[0]));
         else if (in.type == 4)
@@ -585,8 +597,27 @@ static void note_on(int pn, Track *t, int ti, int key, int vel, s32 len)
             v->lfsr = 0x7fff;
             ok = 1;
         }
-        if (!ok)
+        if (!ok) {
+            if (s_notelog)
+                fprintf(stderr, "note p%d t%d prg %d key %d: type %d wave %d/%d not usable (addr %08x)\n", pn, ti,
+                        t->prg, key, in.type, in.wave[0], in.wave[1], wave_addr(p->bank, in.wave[1], in.wave[0]));
+            v->active = 0;
+            if (s_notelog && in.type == 1 && in.wave[1] < 4) {
+                u32 arc = m32(p->bank + 0x18 + in.wave[1] * 8), i;
+                fprintf(stderr, "  bank %08x arc[%d] %08x", p->bank, in.wave[1], arc);
+                if (mem_ok(arc, 0x40)) {
+                    fprintf(stderr, " hdr %08x count %u offs", m32(arc), m32(arc + 0x38));
+                    for (i = 0; i < 8; i++)
+                        fprintf(stderr, " %08x", m32(arc + 0x3c + i * 4));
+                }
+                fputc(10, stderr);
+            }
             return;
+        }
+        if (s_notelog)  /* NDOGS_SNDLOG=2: every note started */
+            fprintf(stderr, "note p%d t%d prg %d key %d vel %d len %d: type %d fmt %d timer %u orig %d adsr %d/%d/%d/%d"
+                    " loop %d total %u\n", pn, ti, t->prg, key, vel, (int)len, in.type, v->fmt, v->base_timer,
+                    in.key, in.a, in.d, in.s, in.r, v->loop, v->total);
         v->active = 1;
         v->key = (u8)key;
         v->orig_key = in.key;
@@ -929,6 +960,15 @@ static void player_main(int pn)
 
 static void player_prepare(int pn, u32 base, u32 off, u32 bank)
 {
+    if (s_notelog && mem_ok(base, 0x4000)) {  /* debugging: dump the sequence data */
+        char name[64];
+        FILE *f;
+        snprintf(name, sizeof name, "seq_%08x.bin", base);
+        if ((f = fopen(name, "wb"))) {
+            fwrite(P(base), 1, 0x4000, f);
+            fclose(f);
+        }
+    }
     Player *p = &s_pl[pn];
     u32 pc = base + off, mask = 1;
     int i;
@@ -1025,6 +1065,7 @@ void snd_init(void)
     int i;
     if (!s_ready)
         init_tables();
+    s_notelog = getenv("NDOGS_SNDLOG") && atoi(getenv("NDOGS_SNDLOG")) >= 2;
     s_ready = 1;
     memset(s_v, 0, sizeof s_v);
     memset(s_pl, 0, sizeof s_pl);

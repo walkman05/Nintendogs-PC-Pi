@@ -641,6 +641,10 @@ static void vblank_event(void)
         video_vblank();
     display_due = now_ms() + LINE0_MS;
     if ((hw_iolog || hw_status) && hw_frame % 60 == 0)
+        {
+            extern unsigned audio_underruns, audio_drops;
+            fprintf(stderr, "audio: %u underruns, %u drops\n", audio_underruns, audio_drops);
+        }
         fprintf(stderr, "frame %u: IME %x IE %08x IF %08x DISPSTAT %04x | irqs vblank %u ipc %u card %u timer0 %u | "
                         "card reads %u, pxi msgs %u | traps %u (3D ports %u), 3D words %u\n", hw_frame,
                 HostIoRead32(0x04000208), HostIoRead32(0x04000210), HostIoRead32(0x04000214),

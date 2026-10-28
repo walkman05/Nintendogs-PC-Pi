@@ -120,7 +120,7 @@ func_0208cc2c/0208cdfc/0208db60/020fdb24 leave don't-care registers for callees 
   status/variables. Written from GBATEK and the SDAT format descriptions. `port/src/snd_selftest.c` (not part of
   the game build) renders a synthetic bank/sequence to a WAV and checks pitches, status and parameters.
 - `port/src/audio.c`: host output, pushed once per VBlank (1/60 s of game time): waveOut on Windows, ALSA via
-  dlopen on Linux; +12 dB output gain (`NDOGS_VOLUME=<percent>`), `NDOGS_WAV=<file>` records, `NDOGS_MUTE=1`.
+  dlopen on Linux; +6 dB output gain (`NDOGS_VOLUME=<percent>`), `NDOGS_WAV=<file>` records, `NDOGS_MUTE=1`.
 - `port/src/window.c`: resizable window (aspect kept, F11 full screen on Windows), XInput gamepads, X11 window on
   Linux via dlopen (not yet run on Linux). `NDOGS_SNDLOG=1` logs sound commands.
 - Not done: microphone (the full game's name calling), direct channel/stream sound commands (unused so far).

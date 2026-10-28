@@ -2,8 +2,8 @@
  * Windows: waveOut (winmm, loaded at run time like user32, after the DS memory map is reserved). Linux: ALSA through
  * dlopen (no build dependency; silent if libasound is missing). NDOGS_WAV=<file> also records everything to a WAV
  * file (for headless tests); NDOGS_MUTE=1 opens no device. Output gain: the driver's levels follow the SDK's decibel
- * mix, which with the game's own faders comes out about 20 dB below full scale, so the host adds +12 dB by default
- * (NDOGS_VOLUME=<percent of that>, clamped to s16). */
+ * mix, which with the game's own faders comes out quiet, so the host adds +6 dB by default (loud gameplay
+ * effects then peak just below full scale; NDOGS_VOLUME=<percent of that>, clamped to s16). */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -45,6 +45,7 @@ static struct {
     MMRESULT (WINAPI *Write)(HWAVEOUT, LPWAVEHDR, UINT);
 } A;
 static HWAVEOUT dev;
+unsigned audio_underruns, audio_drops;
 static WAVEHDR hdr[NBUF];
 static s16 bufs[NBUF][BUF_FRAMES * 2];
 
@@ -91,9 +92,12 @@ static void dev_push(const s16 *s, int frames)
             if (slot < 0)
                 slot = i;
         }
-    if (slot < 0 || free_n <= NBUF - 6)
+    if (slot < 0 || free_n <= NBUF - 6) {
+        audio_drops++;
         return;
+    }
     if (free_n == NBUF) {  /* underrun: pad with silence */
+        audio_underruns++;
         memset(bufs[slot], 0, (size_t)frames * 4);
         hdr[slot].dwBufferLength = (DWORD)frames * 4;
         hdr[slot].dwFlags &= ~WHDR_DONE;
@@ -162,7 +166,7 @@ void audio_push(const s16 *in, int frames)
     static s16 stereo[4096 * 2];
     int i;
     if (gain < 0)
-        gain = getenv("NDOGS_VOLUME") ? atoi(getenv("NDOGS_VOLUME")) * 1024 / 100 : 1024;
+        gain = getenv("NDOGS_VOLUME") ? atoi(getenv("NDOGS_VOLUME")) * 512 / 100 : 512;
     if (frames > 4096)
         frames = 4096;
     for (i = 0; i < frames * 2; i++) {
