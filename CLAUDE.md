@@ -123,7 +123,7 @@ Differential testing against the original ARM code (Unicorn: `pip install unicor
   first argument's object). `port/tools/capdiff.py cap_*.bin` replays on the ARM code from the same memory and
   diffs everything written (host code pointers in game data become ARM jumps via the .map); `--trace` finds the
   first call where the traced object diverges. The dog animation ITCM routines and their helpers match; the per-dog
-  update (func_01ffb34c) matches in 32 of 34 replays (one known divergence in func_02038b10's dog loop).
+  update (func_01ffb34c) matches in all replays.
 - Found this way: func_0204cc24 read r4 left by its caller (the dog) through an uninitialised `unaff_r4` (fixed);
   narrow return types: on the DS a callee's code decides how r0 is extended and callers use r0 as is, on x86 the
   caller's prototype decides. `port/tools/retscan.py` lists definitions vs mismatching caller declarations and
@@ -144,8 +144,11 @@ Differential testing against the original ARM code (Unicorn: `pip install unicor
   NDOGS_PC (`--apply`): 139 parameters in 108 files.
 - Captures include the I/O register page (e.g. POWCNT, which the game reads for the screen swap) as replay input;
   capdiff aligns traces (ARM traces also show recursion and helpers the host calls directly) and resumes at the
-  ARM original when execution lands on an unaligned host function. In the whistle/jump-at-camera scenario all 37
-  runnable replays of the dog update match (one differs only in the OS tick counter).
+  ARM original when execution enters host code (a code hook over the host range: host function addresses are not
+  word aligned, so planted ARM jumps misfired). Bytes written asynchronously meanwhile (OS tick counter, the ARM7
+  stand-in's touch/keys at 0x027fffa8) are reported as ignored. Capture wrappers forward 12 arguments (an 8-argument
+  wrapper gave func_01ffd8f8 a garbage 9th one). In the whistle/jump-at-camera scenario all 50 replays of the dog
+  update (calls 2500-14750, every 250th) match.
 
 Porting hazard: pass-through register arguments. A function that forwards r1-r3 untouched to a callee was
 sometimes decompiled with too few parameters (matching on the DS, garbage on the PC). func_0208f7d0 dropped the

@@ -7,13 +7,15 @@ import os, re, struct, sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from armrun import Arm, STOP  # noqa: E402
-from unicorn import UC_PROT_ALL, UC_HOOK_MEM_UNMAPPED  # noqa: E402
+from unicorn import UC_PROT_ALL, UC_HOOK_MEM_UNMAPPED, UC_HOOK_CODE  # noqa: E402
 from unicorn.arm_const import (UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3, UC_ARM_REG_SP,  # noqa
                                UC_ARM_REG_LR, UC_ARM_REG_PC, UC_ARM_REG_CPSR)
 
 REGIONS = [(0x01ff8000, 0x8000), (0x02000000, 0x400000), (0x027c0000, 0x10000), (0x027f0000, 0x10000),
            (0x037f0000, 0x10000)]
 STACK = 0x0e000000
+# written asynchronously while the host routine runs (interrupts, the ARM7 stand-in): not the routine's doing
+ASYNC = [(0x02155fdc, 1, 'OS tick counter'), (0x027fffa8, 8, 'ARM7 touch/keys')]
 ARGS = [UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3]
 
 
@@ -89,20 +91,19 @@ def replay(path, arm):
     uc.reg_write(UC_ARM_REG_LR, STOP)
     try:
         pc = addr_of(name)
-        for _ in range(10000):
-            try:
-                uc.emu_start(pc, STOP, count=50000000)
+        for _ in range(100000):
+            arm.redirect = None
+            uc.emu_start(pc, STOP, count=50000000)
+            if arm.redirect is None:
                 break
-            except Exception:
-                # landed on a host function no ARM jump could be planted at (unaligned): continue at its original
-                pc = uc.reg_read(UC_ARM_REG_PC)
-                if pc not in arm.host_funcs:
-                    raise
-                pc = arm.host_funcs[pc]
+            pc = arm.redirect  # entered a host function (code pointer in game data): continue at its original
         if uc.reg_read(UC_ARM_REG_PC) != STOP:
             return name, 'ARM did not return (pc %08x)' % uc.reg_read(UC_ARM_REG_PC), None
     except Exception as e:
-        return name, 'ARM error %s at pc %08x' % (e, uc.reg_read(UC_ARM_REG_PC)), None
+        from unicorn.arm_const import UC_ARM_REG_R4, UC_ARM_REG_R12
+        regs = [uc.reg_read(r) for r in ARGS] + [uc.reg_read(r) for r in range(UC_ARM_REG_R4, UC_ARM_REG_R12 + 1)]
+        return name, 'ARM error %s at pc %08x (lr %08x, r0-r12 %s)' % (
+            e, uc.reg_read(UC_ARM_REG_PC), uc.reg_read(UC_ARM_REG_LR), ' '.join('%08x' % x for x in regs)), None
     diffs = []
     for base, data in after.items():
         if base not in before or base == 0x04000000:  # registers: input only (FIFO writes would be noise)
@@ -119,7 +120,6 @@ def replay(path, arm):
 
 def arm_trace(arm, path, names):
     """replay like replay(), recording calls of the named routines: [(name, r0, r1, r2, r3)]"""
-    from unicorn import UC_HOOK_CODE
     calls, hooks = [], []
     for n in names:
         addr = addr_of(n)
@@ -176,17 +176,22 @@ def main():
     arm.uc.mem_map(STACK, 0x10000, UC_PROT_ALL)
     for base, size in ((0x04002000, 0xffe000), (0x05000000, 0x10000), (0x06000000, 0x900000), (0x07000000, 0x10000)):
         arm.uc.mem_map(base, size, UC_PROT_ALL)  # I/O, palettes, VRAM, OAM: present but not modelled
-    # code pointers in game data point at the host's compiled C: plant an ARM jump to the original at each one
+    # code pointers in game data point at the host's compiled C: entering one continues at the original (a code
+    # hook over the host range; host addresses need not be word aligned, ARM fetches round them down)
     mapfile = os.environ.get('NDOGS_MAP', 'objs_cap/nintendogs_cap.exe.map')
     funcs = host_functions(mapfile)
-    arm.host_funcs = funcs
     lo, hi = min(funcs) & ~0xfff, (max(funcs) + 0x1fff) & ~0xfff
     arm.uc.mem_map(lo, hi - lo, UC_PROT_ALL)
-    prev = -16
-    for h in sorted(funcs):
-        if h - prev >= 8:
-            arm.uc.mem_write(h, struct.pack('<2I', 0xe51ff004, funcs[h]))  # ldr pc, [pc, #-4]; .word target
-            prev = h
+
+    def enter_host(uc, addr, size, _):
+        for a in (addr, addr + 1, addr + 2, addr + 3):
+            if a in funcs:
+                arm.redirect = funcs[a]
+                uc.emu_stop()
+                return
+        arm.redirect = None
+        uc.emu_stop()  # not a function entry: stops with the pc in host code (reported as not returning)
+    arm.uc.hook_add(UC_HOOK_CODE, enter_host, None, lo, hi - 1)
     arm.snapshot = arm.uc.context_save()
     if sys.argv[1] == '--trace':
         for path in sys.argv[2:]:
@@ -194,6 +199,10 @@ def main():
         return
     for path in sys.argv[1:]:
         name, info, diffs = replay(path, arm)
+        if diffs:
+            asyn = [d for d in diffs if any(b <= d[0] < b + n for b, n, _ in ASYNC)]
+            diffs = [d for d in diffs if d not in asyn]
+            info += ' (%d async ranges ignored)' % len(asyn) if asyn else ''
         verdict = 'FAILED TO RUN' if diffs is None else 'MATCH' if not diffs else '%d differing ranges' % len(diffs)
         print('%s: %s -> %s' % (os.path.basename(path), info, verdict))
         diffs = diffs or []
