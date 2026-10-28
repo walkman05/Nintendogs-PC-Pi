@@ -157,6 +157,21 @@ void video_frame(void)
     if (getenv("NDOGS_VLOG"))
         fprintf(stderr, "vid %d: 3d %.1fms 2d %.1fms swap %d POWCNT1 %04x DISPCAPCNT %08x VRAMCNT %08x\n", frame, t3d, now_ms() - t0, swapped, powcnt & 0xffff,
                 *(u32 *)(io + 0x64), *(u32 *)(io + 0x240));
+    {
+        /* NDOGS_JANK=1: per presented frame, the time since the previous one, whether a new 3D frame and a
+         * screen swap came with it, and how long the frame took (debugging uneven animation) */
+        static int jank = -1;
+        static double last;
+        static u32 last_pow;
+        double now = now_ms();
+        if (jank < 0)
+            jank = getenv("NDOGS_JANK") != 0;
+        if (jank)
+            fprintf(stderr, "jank %d: dt %.1f 3d %d swapscreens %d render %.1f\n", frame, now - last, swapped,
+                    ((powcnt ^ last_pow) >> 15) & 1, now - t0);
+        last = now;
+        last_pow = powcnt;
+    }
     swapped = 0;
     if (getenv("NDOGS_SHOT")) {
         const char *p = getenv("NDOGS_SHOT");

@@ -98,6 +98,9 @@ drawn yet (milestone 5).
 - 3D debugging: `NDOGS_GXSTAT=1` prints per-second polygon fates (drawn/clipped/culled) and command counts;
   `NDOGS_GXDUMP=<swap>` traces one frame's matrix commands, POLYGON_ATTR/TEXIMAGE writes with host call chains,
   and its polygon list. `NDOGS_HWWATCH=<addr>` (Windows) logs every write to a RAM word with the writer's chain.
+- Timers (`hw.c`): the four DS timers run on the game clock (VBlanks plus time into the frame, minus host work
+  such as drawing and audio), with prescaler, reload, cascade and overflow IRQs; the SDK's OS_GetTick and alarms
+  depend on them. `NDOGS_JANK=1` logs per-frame present intervals and 3D/screen swap pairing.
 - Scripted input for headless tests: `NDOGS_TOUCH="<frame>,<x>,<y>,<frames>;..."` (stylus on the bottom screen),
   `NDOGS_KEYS="<frame>,<mask>,<frames>;..."` (KEYINPUT bits). Reaching the demo's menu and gameplay:
   `NDOGS_TOUCH="900,128,100,6;940,128,100,6;980,128,100,6;1300,207,166,6;1500,207,166,6;1700,115,131,6"`

@@ -33,8 +33,109 @@ static struct {
     u32 arm7_sync;          /* IPCSYNC bits 0-3 as the ARM7 shows them */
     Fifo to_arm7, to_arm9;  /* IPC FIFOs */
     u32 fifo_error;
-    u32 timer[4];
 } hw;
+
+/* ---- timers ---------------------------------------------------------------------------------------------------
+ * The four timers run on the game clock: VBlanks so far plus the time into the current frame (capped at one
+ * frame), in ARM9 bus cycles (33.513982 MHz). So timers advance with game speed, like everything else. A running
+ * timer's counter is computed from when it was started; overflows reload it and raise IRQ 3+n when enabled
+ * (the SDK's OS_GetTick counts timer 0 overflows; OS alarms use timer 1). Cascade timers count the overflows of
+ * the timer before them. */
+#define BUS_HZ 33513982.0
+static double game_ms(void);
+void hw_raise_irq(u32 bits);
+double now_ms(void);
+static double host_work;   /* host work (drawing, audio) since the last VBlank, ms: not game time (see game_ms) */
+#define HOST_WORK(stmt) do { double t0_ = now_ms(); stmt; host_work += now_ms() - t0_; } while (0)
+typedef struct {
+    u16 reload, ctrl;       /* TMxCNT_L as written, TMxCNT_H */
+    u64 start;              /* cycle (or, cascading, the previous timer's overflow count) at the last (re)start */
+    u64 seen;               /* overflows already reported */
+    u16 stopped;            /* counter value while stopped */
+} Timer;
+static Timer tmr[4];
+static const int tmr_shift[4] = { 0, 6, 8, 10 };
+
+static u64 bus_cycles(void)
+{
+    static u64 last;
+    u64 c = (u64)(game_ms() * (BUS_HZ / 1000.0));
+    if (c < last)
+        c = last;  /* monotonic */
+    last = c;
+    return c;
+}
+
+/* overflows since the start and the current counter */
+static u64 timer_state(int n, u64 now, u16 *value)
+{
+    Timer *t = &tmr[n];
+    u64 ticks, period = 0x10000u - t->reload, pos, ovf = 0;
+    if (!(t->ctrl & 0x80)) {
+        *value = t->stopped;
+        return t->seen;
+    }
+    if (n > 0 && (t->ctrl & 4)) {
+        u16 dummy;
+        ticks = timer_state(n - 1, now, &dummy) - t->start;
+    } else
+        ticks = (now - t->start) >> tmr_shift[t->ctrl & 3];
+    pos = t->reload + ticks;
+    if (pos >= 0x10000u) {
+        ovf = (pos - 0x10000u) / period + 1;
+        pos = t->reload + (pos - 0x10000u) % period;
+    }
+    *value = (u16)pos;
+    return ovf;
+}
+
+static void timers_check(void)
+{
+    u64 now = bus_cycles();
+    int n;
+    for (n = 0; n < 4; n++) {
+        u16 v;
+        u64 ovf;
+        if (!(tmr[n].ctrl & 0x80))
+            continue;
+        ovf = timer_state(n, now, &v);
+        if (ovf != tmr[n].seen) {
+            tmr[n].seen = ovf;
+            if (tmr[n].ctrl & 0x40)
+                hw_raise_irq(8u << n);
+        }
+    }
+}
+
+/* after a write to TMxCNT (addr = the byte written): the low half sets the reload value, the high half the
+ * control; a start (bit 7 going 0 -> 1) reloads the counter */
+static void timer_written(u32 addr)
+{
+    int n = (int)((addr - 0x04000100u) >> 2);
+    Timer *t = &tmr[n];
+    u64 now = bus_cycles();
+    u16 v, ctrl = R16(0x04000102u + n * 4);
+    timer_state(n, now, &v);
+    if ((addr & 3) < 2)
+        t->reload = R16(0x04000100u + n * 4);
+    if (ctrl != t->ctrl) {
+        if ((ctrl & 0x80) && !(t->ctrl & 0x80)) {
+            if (n > 0 && (ctrl & 4)) {
+                u16 dummy;
+                t->start = timer_state(n - 1, now, &dummy);
+            } else
+                t->start = now;
+            t->seen = 0;
+        } else if (!(ctrl & 0x80))
+            t->stopped = v;
+        t->ctrl = ctrl;
+    }
+    R16(0x04000100u + n * 4) = (u16)(t->ctrl & 0x80 ? v : t->stopped);
+    if (t->ctrl & 0x80) {  /* keep the counter, not the reload, readable */
+        timer_state(n, now, &v);
+        R16(0x04000100u + n * 4) = v;
+    }
+}
 
 static int fifo_push(Fifo *f, u32 v)
 {
@@ -317,9 +418,11 @@ void hw_io_prepare_read(u32 addr)
                                 (hw.vcount == (u32)(R16(0x04000004) >> 8) ? 4 : 0));
         break;
     case 0x04000100: case 0x04000104: case 0x04000108: case 0x0400010c: {
-        int t = (int)((a - 0x04000100) >> 2);
-        hw.timer[t] += 64;
-        R16(0x04000100 + t * 4) = (u16)hw.timer[t];
+        int n = (int)(((a & ~3u) - 0x04000100) >> 2);
+        u16 v;
+        timers_check();
+        timer_state(n, bus_cycles(), &v);
+        R16(0x04000100 + n * 4) = v;
         break;
     }
     case 0x04000130: /* KEYINPUT: from the window's keyboard */
@@ -383,6 +486,9 @@ void hw_io_written(u32 addr)
             while (fifo_pop(&hw.to_arm7, &m))
                 arm7_receive(m);
         }
+        break;
+    case 0x04000100: case 0x04000104: case 0x04000108: case 0x0400010c:
+        timer_written(addr);
         break;
     case 0x04000214: /* IF: writing 1 clears */
         break;
@@ -533,11 +639,11 @@ void hw_irq_poll(void)
     if (!in_irq && !hw_in_exception()) {
         if (vblank_pending) {
             vblank_pending = 0;
-            video_vblank();
+            HOST_WORK(video_vblank());
         }
         if (video_pending) {
             video_pending = 0;
-            video_frame();
+            HOST_WORK(video_frame());
         }
         irq_exit_reschedule();
     }  /* a switch left pending by an interrupt taken inside a register access */
@@ -609,7 +715,7 @@ static void display_start(void)
     if (hw_in_exception())
         video_pending = 1;  /* render at the next safe point */
     else
-        video_frame();
+        HOST_WORK(video_frame());
 }
 
 /* Audio: each VBlank the sound driver renders 1/60 s (game time) and the host device plays it. */
@@ -631,25 +737,36 @@ static void audio_frame(void)
     audio_push(buf, n);
 }
 
+/* Game time within a frame is wall time since the VBlank minus the host's own work in that time (rasterising,
+ * drawing, presenting, audio), so the game sees the same time pass between its frames however long the host
+ * takes to draw them. */
+static double frame_wall;  /* wall time of the last VBlank */
+static double game_ms(void)
+{
+    double into = frame_wall ? now_ms() - frame_wall - host_work : 0;
+    return hw_frame * FRAME_MS + (into < 0 ? 0 : into > FRAME_MS ? FRAME_MS : into);
+}
+
 static void vblank_event(void)
 {
     hw_frame++;
-    audio_frame();
+    frame_wall = now_ms();
+    host_work = 0;
+    HOST_WORK(audio_frame());
     if (hw_in_exception())
         vblank_pending = 1;
     else
-        video_vblank();
+        HOST_WORK(video_vblank());
     display_due = now_ms() + LINE0_MS;
-    if ((hw_iolog || hw_status) && hw_frame % 60 == 0)
-        {
-            extern unsigned audio_underruns, audio_drops;
-            fprintf(stderr, "audio: %u underruns, %u drops\n", audio_underruns, audio_drops);
-        }
+    if ((hw_iolog || hw_status) && hw_frame % 60 == 0) {
+        extern unsigned audio_underruns, audio_drops;
+        fprintf(stderr, "audio: %u underruns, %u drops\n", audio_underruns, audio_drops);
         fprintf(stderr, "frame %u: IME %x IE %08x IF %08x DISPSTAT %04x | irqs vblank %u ipc %u card %u timer0 %u | "
                         "card reads %u, pxi msgs %u | traps %u (3D ports %u), 3D words %u\n", hw_frame,
                 HostIoRead32(0x04000208), HostIoRead32(0x04000210), HostIoRead32(0x04000214),
                 HostIoRead16(0x04000004), hw_irq_count[0], hw_irq_count[18], hw_irq_count[19], hw_irq_count[3],
                 hw_card_reads, hw_pxi_msgs, hw_trap_count, hw_trap_gx, hw_gx_words);
+    }
     hw_page_open(0x04000004, 1);
     R16(0x04000004) |= 1;
     if (R16(0x04000004) & 8)
@@ -686,6 +803,7 @@ void hw_time_check(void)
         next_frame(t);
     if (display_due && t >= display_due)
         display_start();
+    timers_check();
 }
 
 /* Scanline (0-262) from the frame clock; VBlank lines are 192-262. */
