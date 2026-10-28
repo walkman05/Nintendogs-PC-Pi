@@ -268,13 +268,15 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--demo"))
             ndogs_full = 0;
     setvbuf(stdout, 0, _IONBF, 0);
-    if (!dir) {
-        dir = find_data_dir();
+    {
+        extern const char *ndogs_setup(const char *found, const char *exe_dir, int have_data, int argc,
+                                       char **argv);
         /* first run: build the data folder from the user's ROMs (port/src/setup.c); the relaunched copy
-         * (platform_relaunch_reserved) finds it done */
-        if (!getenv("NDOGS_RESERVED") && !getenv("NDOGS_NOSETUP")) {
-            extern const char *ndogs_setup(const char *found, const char *exe_dir, int have_data, int argc,
-                                           char **argv);
+         * (platform_relaunch_reserved) finds it done. A folder given with --data is only checked (its ROM path). */
+        int given = dir != 0;
+        if (!dir)
+            dir = find_data_dir();
+        if (!getenv("NDOGS_RESERVED") && !getenv("NDOGS_NOSETUP") && (!given || is_data_dir(dir))) {
             dir = ndogs_setup(dir, exe_dir(), is_data_dir(dir), argc, argv);
             if (!dir)
                 return 1;

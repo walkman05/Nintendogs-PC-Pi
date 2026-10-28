@@ -882,8 +882,36 @@ const char *ndogs_setup(const char *found, const char *exe_dir, int have_data, i
     int i;
 #ifdef NDOGS_RETAIL
     /* the retail build (port/tools/retail_match.py): everything comes from the Dachshund & Friends cartridge */
-    if (have_data)
+    if (have_data) {
+        /* a data folder prepared elsewhere (e.g. on a PC for a Raspberry Pi) records a ROM path that may not
+         * exist here: then use the ROM found on the command line, next to the exe or in the current folder */
+        char rp[1024];
+        FILE *f;
+        snprintf(rp, sizeof rp, "%s/host/rom_path.txt", found);
+        if ((f = fopen(rp, "r")) != 0) {
+            rp[0] = 0;
+            if (fgets(rp, sizeof rp, f))
+                rp[strcspn(rp, "\r\n")] = 0;
+            fclose(f);
+            if (rp[0] && (f = fopen(rp, "rb")) != 0) {
+                fclose(f);
+                return found;
+            }
+        }
+        for (i = 1; i < argc; i++)
+            consider(argv[i]);
+        scan(exe_dir);
+        scan(".");
+        if (retail_path[0]) {
+            char abs[1024], line[1100];
+            full_path(retail_path, abs, sizeof abs);
+            snprintf(line, sizeof line, "%s\n", abs);
+            printf("setup: using the ROM at %s\n", abs);
+            save(found, "host/rom_path.txt", line, (u32)strlen(line));
+        } else
+            message("Can't find the Dachshund & Friends ROM. Put it next to nintendogs_pc and start it again.", 1);
         return found;
+    }
     if (!ndogs_host_tables[0][0]) {
         message("This build of nintendogs_pc cannot set up its game data (it was built without extracted/; "
                 "see port/tools/gen_hosttabs.py). Start it with --data <data folder>.", 1);

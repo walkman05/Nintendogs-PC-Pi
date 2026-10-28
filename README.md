@@ -47,4 +47,54 @@ Some files start with a `#pragma` the original build used for them (`#pragma avo
 Each function was checked by compiling its file alone and comparing the result instruction by instruction with the
 original, with references to other functions and data compared by symbol.
 
+## PC port: building it yourself
+
+The same C also builds as a native program for Windows and the Raspberry Pi (`port/`). Ready-made test builds are
+on the Releases page; this is how to make your own. It runs the retail game, *Nintendogs: Dachshund & Friends*.
+
+**You need:**
+- two ROMs of your own: the **European kiosk demo** (MD5 above; the code was decompiled from it) and
+  **Nintendogs: Dachshund & Friends (Europe)** (a full 64 MB dump);
+- **Python 3**;
+- **dsd 0.12.1**, the ds-decomp tool: download `dsd-windows-x86_64.exe` (or `dsd-linux-x86_64`) from
+  https://github.com/AetiasHax/ds-decomp/releases/tag/v0.12.1.
+
+### Windows
+
+1. Install [MSYS2](https://www.msys2.org), open its **MINGW32** shell and install the compiler:
+   `pacman -S mingw-w64-i686-gcc mingw-w64-i686-python`
+2. In this folder, prepare the game data from your ROMs (it goes into `extracted/`, which git ignores):
+   ```
+   python port/tools/extract_rom.py --rom <demo.nds> --dsd <path to dsd.exe>
+   python port/tools/retail_match.py --rom <dachshund.nds> --dsd <path to dsd.exe>
+   ```
+3. Build (a few minutes):
+   ```
+   python port/tools/host_compile.py --cc gcc --link build/objs --exe nintendogs_pc.exe --target retail
+   ```
+4. Run `build\objs\nintendogs_pc.exe` (double-click works).
+
+### Raspberry Pi
+
+The game needs a **32-bit** program: Raspberry Pi OS Bookworm on a Pi 2, 3 or 4 (or a Pi 5 running the 32-bit
+OS). dsd doesn't run on the Pi, so do the preparation step on a PC.
+
+1. On a Windows or Linux PC, do steps 1-2 above (on Linux: `python3` and `dsd-linux-x86_64`), then copy this
+   whole folder, including `extracted/`, to the Pi.
+2. On the Pi, install the compiler:
+   - 32-bit Raspberry Pi OS: `sudo apt install gcc python3`
+   - 64-bit Raspberry Pi OS: `sudo apt install gcc-arm-linux-gnueabihf libc6-dev-armhf-cross python3`, and for
+     running it `sudo dpkg --add-architecture armhf && sudo apt update && sudo apt install libc6:armhf libx11-6:armhf libasound2:armhf`
+3. Build (this takes a while on a Pi). On 64-bit Pi OS use `--cc arm-linux-gnueabihf-gcc` instead of `--cc gcc`:
+   ```
+   python3 port/tools/host_compile.py --cc gcc --link build/objs --exe nintendogs_pc --target retail
+   ```
+4. Put your Dachshund & Friends ROM in this folder and, from this folder, run `./build/objs/nintendogs_pc`. (The
+   ROM's path recorded on the PC doesn't exist on the Pi; the program then uses the ROM it finds here.)
+
+You can also build the Pi program on Windows with Arm's cross-compiler (Arm GNU Toolchain 12.2.rel1,
+`arm-none-linux-gnueabihf`): step 3 with `--cc arm-none-linux-gnueabihf-gcc` and `--link build/objs_pi`.
+
+`CLAUDE.md` has the details: how the port works, debugging switches, and what is still open.
+
 Not affiliated with or endorsed by Nintendo. No game assets or ROM data are included.
