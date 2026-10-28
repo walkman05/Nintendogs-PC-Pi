@@ -1,4 +1,9 @@
 #include "ctx.h"
+#ifdef NDOGS_PC /* receives func_0206824c's u16 unchanged, as the DS register does (declared in a macro) */
+#define NDOGS_RECV16 u32
+#else
+#define NDOGS_RECV16 s16
+#endif
 
 extern s32 data_02142cd8[];
 extern s32 data_02142cdc[];
@@ -26,7 +31,7 @@ typedef struct { s32 w[3]; } T3;
         s32 iVar3b;                                                        \
         s32 iVar4b;                                                        \
         s32 iVar3c;                                                        \
-        s16 sVar2b;                                                        \
+        NDOGS_RECV16 sVar2b;                                                        \
         iVar3b = func_01ffdb08(param_3);                                   \
         *(T3 *)param_1 = *(T3 *)param_2;                                    \
         param_1[1] = (A9);                                                 \

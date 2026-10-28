@@ -134,9 +134,9 @@ Differential testing against the original ARM code (Unicorn: `pip install unicor
   receive FX_Atan2Idx: dog chase velocity, other-dog loop, turning helpers). `port/tools/retlocals.py` does this for
   every mismatched function: it finds narrow locals receiving the result, checks the original ARM code after the
   call for re-extension, and (`--apply`) widens the ones the DS kept unextended, unless the variable has other
-  writes or its address is taken (listed as REVIEW): 80 files widened. Not done: 8 REVIEW sites and 7 files where
-  the declaration sits inside a multi-line macro (func_020cac38/cae5c/cb080/cb7f4/cbc3c/cc084/cc4cc, receivers of
-  func_0206824c).
+  writes or its address is taken (listed as REVIEW): 80 files widened, plus 7 where the declaration sits inside a
+  multi-line macro (func_020cac38/cae5c/cb080/cb7f4/cbc3c/cc084/cc4cc: an NDOGS_RECV16 type alias). The 8 REVIEW
+  sites were checked by hand: their callees return values that fit (0/1 flags, a u16 global, an atan2 angle in u16).
 - Captures include the I/O register page (e.g. POWCNT, which the game reads for the screen swap) as replay input;
   capdiff aligns traces (ARM traces also show recursion and helpers the host calls directly) and resumes at the
   ARM original when execution lands on an unaligned host function. In the whistle/jump-at-camera scenario all 37
