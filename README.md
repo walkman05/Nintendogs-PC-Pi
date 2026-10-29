@@ -80,8 +80,10 @@ on the Releases page; this is how to make your own. It runs the retail game, *Ni
 
 ### Raspberry Pi
 
-The game needs a **32-bit** program: Raspberry Pi OS Bookworm on a Pi 2, 3 or 4 (or a Pi 5 running the 32-bit
-OS). dsd doesn't run on the Pi, so do the preparation step on a PC.
+The game needs a **32-bit** program: Raspberry Pi OS Bookworm on a Pi 3 or 4 (or a Pi 5 running the 32-bit
+OS). The build is tuned for the Pi 3B (Cortex-A53): 3D at the DS's own resolution and no widescreen by default;
+on a Pi 4 or 400 run it with `NDOGS_SCALE=2 NDOGS_WIDE=1` for more. dsd doesn't run on the Pi, so do the
+preparation step on a PC.
 
 1. On a Windows or Linux PC, do steps 1-2 above (on Linux: `python3` and `dsd-linux-x86_64`), then copy this
    whole folder, including `extracted/`, to the Pi.

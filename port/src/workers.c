@@ -152,13 +152,19 @@ void workers_run(int n, void (*fn)(int, void *), void *arg)
 }
 #endif
 
-/* NDOGS_THREADS=<n> overrides the worker count (default: CPUs - 1, at most 15) */
+/* NDOGS_THREADS=<n> overrides the worker count (default on x86: half the logical CPUs, about one per physical
+ * core: with hyper-threads too the bands fight over the cores, 12 ms instead of 6 for a frame at 2x on 8 cores /
+ * 16 threads, and burn far more CPU; elsewhere (Raspberry Pi) CPUs - 1; at most 15) */
 void workers_init(void)
 {
     int n;
     if (nworkers >= 0)
         return;
+#if defined(__i386__) || defined(__x86_64__)
+    n = getenv("NDOGS_THREADS") ? atoi(getenv("NDOGS_THREADS")) : cpu_count() / 2;
+#else
     n = getenv("NDOGS_THREADS") ? atoi(getenv("NDOGS_THREADS")) : cpu_count() - 1;
+#endif
     if (n < 0)
         n = 0;
     if (n > MAX_WORKERS)

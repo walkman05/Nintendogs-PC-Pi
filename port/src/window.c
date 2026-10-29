@@ -46,7 +46,7 @@ static int scale_req = -1;               /* internal resolution 1-MAXS, 0 auto *
 static int filter_linear = 1;             /* GPU presenter: bilinear (1) or nearest (0) scaling, F7 */
 static void fit(int *x, int *y, int *w, int *h);
 #ifdef __arm__
-#define AUTO_MAXS 2                       /* a Raspberry Pi can't render more in time */
+#define AUTO_MAXS 1                       /* a Raspberry Pi 3B can't render more in time (NDOGS_SCALE=2 on a Pi 4) */
 #else
 #define AUTO_MAXS MAXS
 #endif
@@ -165,7 +165,11 @@ static void view_for(int l, int both, float *wf, float *hf)
     float a, f;
     *wf = *hf = 1.0f;
     if (view_mode < 0) {
+#ifdef __arm__
+        view_mode = !getenv("NDOGS_WIDE") ? 0 : atof(getenv("NDOGS_WIDE")) >= 1.0 ? 2 : atoi(getenv("NDOGS_WIDE"));
+#else
         view_mode = !getenv("NDOGS_WIDE") ? 1 : atof(getenv("NDOGS_WIDE")) >= 1.0 ? 2 : 0;
+#endif
         view_fixed = view_mode == 2 ? (float)atof(getenv("NDOGS_WIDE")) : 1.0f;
         if (view_mode == 2 && strchr(getenv("NDOGS_WIDE"), ','))
             view_fixed_h = (float)atof(strchr(getenv("NDOGS_WIDE"), ',') + 1);

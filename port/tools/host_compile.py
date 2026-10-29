@@ -234,7 +234,7 @@ def main():
     TARGET, SFX = args.target, '' if args.target == 'demo' else '_retail'
     global ARCH
     if arm_target(args.cc):
-        ARCH = ['-marm', '-fsigned-char']
+        ARCH = ['-marm', '-fsigned-char', '-mcpu=cortex-a53', '-mfpu=neon-fp-armv8']  # tuned for the Pi 3B (runs on 3/4/5)
         FLAGS[FLAGS.index('-m32'):FLAGS.index('-m32') + 1] = ARCH
     if args.link:
         OBJDIR = os.path.abspath(args.link)
