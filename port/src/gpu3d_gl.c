@@ -913,7 +913,12 @@ static void gpu_wait(GLsync fence)
     }
 }
 
-static int render(const gl3d_job_t *j, u32 *hires, u32 *out)
+/* a frame submitted ahead (gl3d_prefetch): its own pixel buffer and fence, collected or dropped later */
+static GLuint b_pack2;
+static GLsync g_pf_fence;
+static int g_pf_rw, g_pf_rh;
+
+static int render(const gl3d_job_t *j, u32 *hires, u32 *out, int ahead)
 {
     const u8 *io = j->io;
     u32 disp3dcnt = io16(io, 0x60), clr = io32(io, 0x350), cdepth = (io16(io, 0x354) & 0x7fff) * 0x200 + 0x1ff;
@@ -1061,7 +1066,7 @@ static int render(const gl3d_job_t *j, u32 *hires, u32 *out)
         size_t hsize = (size_t)j->rw * j->rh * 4;
         GLsync fence;
         const u8 *m;
-        glBindBuffer(GL_PIXEL_PACK_BUFFER, b_pack);
+        glBindBuffer(GL_PIXEL_PACK_BUFFER, ahead ? b_pack2 : b_pack);
         glBufferData(GL_PIXEL_PACK_BUFFER, (GLsizeiptr)(hsize + DS_W * DS_H * 4), 0, GL_STREAM_READ);
         glPixelStorei(GL_PACK_ROW_LENGTH, 0);
         glReadPixels(0, 0, j->rw, j->rh, GL_BGRA, GL_UNSIGNED_BYTE, (void *)0);
@@ -1078,6 +1083,13 @@ static int render(const gl3d_job_t *j, u32 *hires, u32 *out)
         TS(4);
         fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
         glFlush();
+        if (ahead) {
+            g_pf_fence = fence;
+            g_pf_rw = j->rw;
+            g_pf_rh = j->rh;
+            glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+            return glGetError() ? 0 : 1;
+        }
         gpu_wait(fence);
         glDeleteSync(fence);
         if (g_prof) {
@@ -1117,7 +1129,7 @@ int gl3d_render(const gl3d_job_t *j)
             fprintf(stderr, "gpu3d_gl: OpenGL renderer unavailable, using the CPU rasteriser\n");
     }
     if (g_ok && !(g_mode == 2 && j->rw * j->rh > (int)(sizeof cmp_hires / 4)))
-        r = render(j, g_mode == 2 ? cmp_hires : j->hires, g_mode == 2 ? cmp_out : j->out);
+        r = render(j, g_mode == 2 ? cmp_hires : j->hires, g_mode == 2 ? cmp_out : j->out, 0);
     if (r < 0)
         return 0;  /* only this frame on the CPU */
     if (!r) {
@@ -1128,6 +1140,61 @@ int gl3d_render(const gl3d_job_t *j)
         return 0;
     }
     return 1;
+}
+
+/* Frames submitted ahead: the GPU draws while the game goes on (it runs at low clocks under this light load, so
+ * waiting for each frame cost 2-3 ms); gl3d_collect fetches the result when it is due, gl3d_drop forgets it. */
+void gl3d_drop(void)
+{
+    if (g_pf_fence) {
+        glDeleteSync(g_pf_fence);
+        g_pf_fence = 0;
+    }
+}
+
+int gl3d_prefetch(const gl3d_job_t *j)
+{
+    int r;
+    if (g_ok <= 0 || g_mode != 1)
+        return 0;
+    gl3d_drop();
+    if (!b_pack2)
+        glGenBuffers(1, &b_pack2);
+    r = render(j, 0, 0, 1);
+    if (r <= 0) {
+        gl3d_drop();
+        return 0;
+    }
+    return 1;
+}
+
+int gl3d_collect(int rw, int rh, u32 *hires, u32 *out)
+{
+    size_t hsize = (size_t)rw * rh * 4;
+    const u8 *m;
+    double t0 = now_ms();
+    if (!g_pf_fence || rw != g_pf_rw || rh != g_pf_rh) {
+        gl3d_drop();
+        return 0;
+    }
+    double tw, tm;
+    int ready = glClientWaitSync(g_pf_fence, 0, 0) != GL_TIMEOUT_EXPIRED;
+    gpu_wait(g_pf_fence);
+    gl3d_drop();
+    tw = now_ms();
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, b_pack2);
+    m = glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, (GLsizeiptr)(hsize + DS_W * DS_H * 4), GL_MAP_READ_BIT);
+    tm = now_ms();
+    if (m) {
+        memcpy(hires, m, hsize);
+        memcpy(out, m + hsize, DS_W * DS_H * 4);
+        glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
+    }
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+    if (getenv("NDOGS_VLOG"))
+        fprintf(stderr, "gl3d: collected ahead, %.2fms (ready %d, wait %.2f map %.2f copy %.2f)\n", now_ms() - t0, ready,
+                tw - t0, tm - tw, now_ms() - tm);
+    return m != 0;
 }
 
 /* ---- comparison with the CPU rasteriser (NDOGS_GPU3D=2) -------------------------------------------------------- */
@@ -1230,5 +1297,8 @@ void gl3d_compare(const gl3d_job_t *j)
 
 #else
 int gl3d_render(const gl3d_job_t *j) { (void)j; g_mode = 0; return 0; }
+int gl3d_prefetch(const gl3d_job_t *j) { (void)j; return 0; }
+int gl3d_collect(int rw, int rh, u32 *hires, u32 *out) { (void)rw; (void)rh; (void)hires; (void)out; return 0; }
+void gl3d_drop(void) {}
 void gl3d_compare(const gl3d_job_t *j) { (void)j; }
 #endif

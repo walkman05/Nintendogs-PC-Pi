@@ -39,6 +39,9 @@ typedef struct {
 
 int gl3d_mode(void);   /* 0 CPU rasteriser, 1 OpenGL, 2 both, compared (NDOGS_GPU3D) */
 int gl3d_render(const gl3d_job_t *j);                 /* 0: no OpenGL (use the CPU rasteriser) */
+int gl3d_prefetch(const gl3d_job_t *j);  /* submit without waiting (hires/out unused); 0 if not possible */
+int gl3d_collect(int rw, int rh, u32 *hires, u32 *out);  /* the frame submitted ahead, if it is that size; else 0 */
+void gl3d_drop(void);                    /* forget the frame submitted ahead */
 void gl3d_compare(const gl3d_job_t *j);  /* mode 2: j, then 0 once the CPU render has finished: compare the two */
 void gx_tex_decode(u32 tex, u32 pal, int w, int h, u32 *dst);  /* texels as col | alpha << 16 (gpu3d.c) */
 

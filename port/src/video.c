@@ -596,6 +596,7 @@ static const u32 *screen_a_at(const Frame *fa, const Frame *fb, float t, int S, 
 static int compose_now(double now, int latest, const u32 **top, int *tw, int *th, const u32 **bottom, int *bw,
                        int *bh, int S)
 {
+    gx_sync();
     int wide = (gx_wide_px() > DS_W || gx_tall_px() > DS_H) && gx_scale() == S, k;
     *tw = *bw = DS_W * S;
     *th = *bh = DS_H * S;
@@ -689,11 +690,12 @@ static int compose_now(double now, int latest, const u32 **top, int *tw, int *th
 
 static int interp_active(void);
 
-/* present: interpolated to now if possible, else the last real frame */
-static int present(const u32 *top, const u32 *bottom, int S)
+/* present: interpolated to <when> (a frame in between: its slot on the grid) if possible, else the last real
+ * frame */
+static int present(const u32 *top, const u32 *bottom, int S, double when)
 {
     double t0 = now_ms();
-    int act = interp_active(), tw, th, bw, bh, r, in = compose_now(t0, !act, &top, &tw, &th, &bottom, &bw, &bh, S);
+    int act = interp_active(), tw, th, bw, bh, r, in = compose_now(when, !act, &top, &tw, &th, &bottom, &bw, &bh, S);
     r = window_present(top, tw, th, bottom, bw, bh, DS_W * S, DS_H * S);
     i_presents++;
     if (in && act) {  /* what a frame in between costs (NDOGS_JANK) */
@@ -729,11 +731,29 @@ double video_next_present(double deadline)
     return i_last + step < deadline ? i_last + step : 0;
 }
 
+/* The next slot's 3D, started on the GPU now (one screen with 3D, as compose_now will want it), so that it is
+ * ready when the slot comes instead of the GPU, which runs at low clocks under this light load, being waited for
+ * then. Not when the slot is likely after the next game frame (that one starts it). */
+static void prefetch_next(void)
+{
+    const Frame *fa = fr(1), *fb = fr(0);
+    double slot = i_last + i_period, span = fb->time - fa->time;
+    float t;
+    if (!interp_active() || dual() || !steady() || span <= 0 || span > 50.0 || gx_interp_pos(slot) < 0)
+        return;
+    t = (float)((slot - fb->time) / span);
+    if (t > 1)
+        return;
+    t = t < 0 ? 0 : t;
+    gx_prefetch_pair(fb->io3d, 0, 1, t);
+}
+
 void video_present_interp(void)
 {
     i_last += i_period;
-    if (!present(i_top, i_bottom, i_S))
+    if (!present(i_top, i_bottom, i_S, i_last))
         exit(0);
+    prefetch_next();
 }
 
 /* VBlank: the 3D engine swaps its lists here (geometry stalls after SWAP_BUFFERS until VBlank), so the 3D image
@@ -853,6 +873,7 @@ void video_frame(void)
             window_open(2);
     }
     double t0 = now_ms();
+    gx_sync();  /* the VBlank's 3D raster, if the GPU still had it */
     hw_io_snapshot(io);
     interp_keep();
     S = gx_scale();
@@ -952,10 +973,11 @@ void video_frame(void)
          * alive. (Presenting every frame here would pin the grid to the game's frames: at 72 Hz no slot would
          * ever fit before the next VBlank.) */
         if (!interp_active() || now_ms() - i_last > i_period * 1.5) {
-            if (!present(top, bottom, S))
+            if (!present(top, bottom, S, now_ms()))
                 exit(0);
             i_last = now_ms();
         }
+        prefetch_next();
     }
 
     /* stylus: the ARM7 leaves the latest touch sample at 0x027fffaa (x, y as 12-bit ADC values, touch bit 24,

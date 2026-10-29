@@ -66,10 +66,12 @@ void hw_capture_done(void);                 /* clears DISPCAPCNT's enable bit on
  * (matrix stack levels, busy = 0). */
 void gx_command(u32 port, u32 value);
 void gx_render_swapped(const u8 *io, u32 *out);
+void gx_sync(void);            /* the last gx_render_swapped is in out and gx_hires() (it may still be on the GPU) */
 float gx_interp_pos(double now);                      /* frame interpolation (gpu3d.c): position at a time, -1 none */
 int gx_render_interp(const u8 *io, float t, u32 *out); /* the shown list interpolated from the previous one */
 int gx_take_swapped(const u8 *io, u32 *out);           /* gx_render_swapped, skipping the raster if interpolated */
-int gx_render_pair(const u8 *io, int newer, int older, float t, u32 *out);  /* between two of the last 4 lists */
+int gx_render_pair(const u8 *io, int newer, int older, float t, u32 *out);
+int gx_prefetch_pair(const u8 *io, int newer, int older, float t);  /* the same, started ahead on the GPU */  /* between two of the last 4 lists */
 unsigned gx_list_seq(void);                            /* lists shown so far */
 int gx_swap_pending(void);
 void gx_set_scale(int s);      /* internal 3D resolution: 1-4 times 256x192 */

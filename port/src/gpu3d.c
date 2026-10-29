@@ -949,12 +949,17 @@ static inline u8 tex8(u32 off) { return tex_mem[off & 0x7ffff]; }
 static inline u16 tex16(u32 off) { off &= 0x7fffe; return (u16)(tex_mem[off] | tex_mem[off + 1] << 8); }
 static inline u32 tex32(u32 off) { off &= 0x7fffc; return *(const u32 *)(tex_mem + off); }
 static inline u16 pal16(u32 off) { off &= 0x1fffe; return (u16)(texpal_mem[off] | texpal_mem[off + 1] << 8); }
-static unsigned g_texgen;  /* counts refreshes of tex_mem/texpal_mem (the OpenGL renderer's texture cache) */
+static unsigned g_texgen;  /* counts changes of tex_mem/texpal_mem (the OpenGL renderer's texture cache) */
 static void flatten_tex(void)
 {
-    vram_flatten(VRAM_TEX, tex_mem, sizeof tex_mem);
-    vram_flatten(VRAM_TEXPAL, texpal_mem, 0x18000);
-    g_texgen++;
+    static u8 t2[sizeof tex_mem], p2[sizeof texpal_mem];  /* textures rarely change: then the cache isn't checked */
+    vram_flatten(VRAM_TEX, t2, sizeof t2);
+    vram_flatten(VRAM_TEXPAL, p2, 0x18000);
+    if (memcmp(t2, tex_mem, sizeof t2) || memcmp(p2, texpal_mem, 0x18000)) {
+        memcpy(tex_mem, t2, sizeof t2);
+        memcpy(texpal_mem, p2, 0x18000);
+        g_texgen++;
+    }
 }
 
 static inline int wrapc(int c, int size, int rep, int flip)
@@ -1488,6 +1493,10 @@ void gx_set_view(float wf, float hf)
     RH = g_hpx * g_scale;
 }
 
+/* a frame in between submitted ahead to the GPU (gx_prefetch_pair): which one it is */
+static int g_ahead, g_ahead_ok;
+static struct { int valid, c, p, rw, rh; unsigned seq; float t; } g_pf;
+
 static void render_list(const plist_t *L, const u8 *io, u32 *out, int flatten)
 {
     static int order[MAX_POLY];
@@ -1529,6 +1538,10 @@ static void render_list(const plist_t *L, const u8 *io, u32 *out, int flatten)
     {   /* the OpenGL renderer (NDOGS_GPU3D; 2: both, compared) */
         gl3d_job_t gj = { L, order, n, io, g_scale, RW, RH, g_xoff, g_yoff, tex_mem, texpal_mem, g_texgen, g_hires, out };
         int gm = gl3d_mode();
+        if (g_ahead) {  /* submitted only (gx_prefetch_pair) */
+            g_ahead_ok = gm == 1 && gl3d_prefetch(&gj);
+            return;
+        }
         if (gm && gl3d_render(&gj)) {
             if (gm == 1) {
                 if (getenv("NDOGS_VLOG"))
@@ -1613,9 +1626,43 @@ static void rec_rotate(void)
 
 unsigned gx_list_seq(void) { return r_seq; }
 
+/* The VBlank raster on the GPU is only submitted (when the OpenGL renderer runs): the game's logic for the frame
+ * runs while the GPU draws, and gx_sync collects it into out and gx_hires() before they are used (video_frame;
+ * every 3D call here starts with it). */
+static u32 *g_vb_out;   /* a submitted VBlank raster to collect into this (and g_hires) */
+static const u8 *g_vb_io;
+
+void gx_sync(void)
+{
+    u32 *out = g_vb_out;
+    if (!out)
+        return;
+    g_vb_out = 0;
+    if (!gl3d_collect(RW, RH, g_hires, out))
+        render_list(&g_list[g_cur ^ 1], g_vb_io, out, 0);  /* (not collected: drawn now, same list and textures) */
+}
+
 void gx_render_swapped(const u8 *io, u32 *out)
 {
-    render_list(&g_list[g_cur ^ 1], io, out, 1);
+    gx_sync();
+    if (g_pf.valid) {
+        gl3d_drop();
+        g_pf.valid = 0;
+    }
+    if (gl3d_mode() == 1) {
+        static u8 io_copy[0x2000];
+        memcpy(io_copy, io, sizeof io_copy);
+        g_ahead = 1;
+        g_ahead_ok = 0;
+        render_list(&g_list[g_cur ^ 1], io_copy, out, 1);
+        g_ahead = 0;
+        if (g_ahead_ok) {
+            g_vb_out = out;
+            g_vb_io = io_copy;
+        } else
+            render_list(&g_list[g_cur ^ 1], io_copy, out, 0);
+    } else
+        render_list(&g_list[g_cur ^ 1], io, out, 1);
     g_swap_pending = 0;
     rec_rotate();
 }
@@ -1625,6 +1672,7 @@ void gx_render_swapped(const u8 *io, u32 *out)
  * it can't be interpolated with the one before. */
 int gx_take_swapped(const u8 *io, u32 *out)
 {
+    gx_sync();
     if (r_swapped >= 0 && r_cur >= 0 && !g_rec[r_swapped].bad && !g_rec[r_cur].bad &&
         now_ms() - g_rec[r_cur].time < 50.0) {
         flatten_tex();
@@ -1770,6 +1818,16 @@ int gx_render_pair(const u8 *io, int newer, int older, float t, u32 *out)
     if (t < 0 || newer < 0 || newer > 3 || older < 0 || older > 3 || r_hist[newer] < 0 || r_hist[older] < 0 ||
         g_rec[r_hist[newer]].bad || g_rec[r_hist[older]].bad)
         return 0;
+    if (!g_ahead)
+        gx_sync();
+    if (g_pf.valid && !g_ahead) {  /* submitted ahead: collect it if it is this one */
+        int same = g_pf.c == r_hist[newer] && g_pf.p == r_hist[older] && g_pf.seq == r_seq &&
+                   fabsf(g_pf.t - t) < 1e-4f && g_pf.rw == RW && g_pf.rh == RH;
+        g_pf.valid = 0;
+        if (same && gl3d_collect(RW, RH, g_hires, out))
+            return 1;
+        gl3d_drop();
+    }
     C = &g_rec[r_hist[newer]];
     P = &g_rec[r_hist[older]];
     match = pair_match(r_hist[newer], r_hist[older]);
@@ -1834,6 +1892,33 @@ int gx_render_pair(const u8 *io, int newer, int older, float t, u32 *out)
                 tr - t0, now_ms() - tr, L.npoly, matched, C->nb, C->nm);
     }
     return 1;
+}
+
+/* gx_render_pair submitted to the GPU without waiting, to be collected by the gx_render_pair call with the same
+ * arguments (as long as no new list came); 0 if not possible (CPU rasteriser, nothing to interpolate) */
+int gx_prefetch_pair(const u8 *io, int newer, int older, float t)
+{
+    static u32 unused[DS_W * DS_H];
+    if (gl3d_mode() != 1)
+        return 0;
+    gx_sync();
+    if (g_pf.valid) {
+        gl3d_drop();
+        g_pf.valid = 0;
+    }
+    g_ahead = 1;
+    g_ahead_ok = 0;
+    if (gx_render_pair(io, newer, older, t, unused) && g_ahead_ok) {
+        g_pf.valid = 1;
+        g_pf.c = r_hist[newer];
+        g_pf.p = r_hist[older];
+        g_pf.seq = r_seq;
+        g_pf.t = t;
+        g_pf.rw = RW;
+        g_pf.rh = RH;
+    }
+    g_ahead = 0;
+    return g_pf.valid;
 }
 
 /* the shown list interpolated from the previous one (one screen with 3D) */

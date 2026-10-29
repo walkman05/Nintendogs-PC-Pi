@@ -283,6 +283,14 @@ found no other case; variadic functions are safe (gcc pushes the unnamed registe
   GPU time 0.25 ms at 1x, ~0.6 ms at 2x, 1.7-3 ms at 4x on an RTX 4060 Ti, which the driver keeps at ~600 MHz under
   this light load, so the wait (+~0.5 ms latency) is most of a 3D frame's 2-3 ms. video.c's compose() and widen()
   run in row bands on the workers (idle now): 3x, 1.78 wide, 2.4 -> 0.9 ms and 2.4 -> 0.45 ms per frame.
+  Pipelined, so the game thread doesn't wait for the GPU: after each present (and each game frame) video.c starts
+  the next slot's 3D (prefetch_next -> gx_prefetch_pair -> gl3d_prefetch: its own pixel buffer and fence), and
+  gx_render_pair collects it when called with the same lists, position (frames in between are composed for their
+  slot time, so it matches exactly) and size, else drops it and draws. The VBlank raster (when it can't be skipped:
+  display capture, 3D on both screens, which Home does now and then for the dogs' portraits) is only submitted;
+  gx_sync collects it at video_frame / compose_now / any 3D call. The texture cache is checked only when the
+  flattened texture memory changed (memcmp). Maximised at 1080p/120 Hz, 3x, Home: 103 -> 109 fps, a frame in
+  between 5.7 -> 4.1 ms; left: frames with 3D on both screens (~9%) still take ~11 ms of the 16.7.
 - Not done: microphone (the full game's name calling), direct channel/stream sound commands (unused so far).
 
 ## Full-game mode
