@@ -28,6 +28,7 @@ enum {
 };
 u8 vram_read8(int role, u32 offset);
 u16 vram_read16(int role, u32 offset);
+const u8 *vram_cpu_view(int role, u32 *size);
 u32 vram_read32(int role, u32 offset);
 void vram_cnt_written(int bank, u8 value);  /* VRAMCNT_A..I changed (bank 0..8) */
 void vram_init(void);

@@ -293,9 +293,17 @@ pointers): 64-bit Pi OS needs armhf multiarch libraries, and a Pi 5 on its defau
 - main.c's Linux crash/watchdog backtraces walk ARM frames (fp -> saved lr, fp[-1] -> caller's fp).
 - mic.c: ALSA capture (dlopen, non-blocking, mono S16 at the game's rate).
 - audio.c: audio_underruns/drops were defined only in the Windows branch (any Linux link failed).
+- Speed (from a tester's Pi 400 work; their measurements, native scale, 4 workers): window.c presents through
+  EGL/GLES2 (dlopen, own declarations as for Xlib: the cross toolchain has no EGL/GL headers) as a texture scaled by
+  the GPU, falling back to XPutImage with a cached column map (NDOGS_GL=0 forces it; software GL is refused):
+  20 -> 45 fps. gpu2d.c reads BG/OBJ VRAM in place (vram_cpu_view) and sorts the BG layers by priority once per
+  render; the sqrt/divider/GXSTAT helpers func_02067760/0206778c/0206782c/0206a1c8 use HostIo* (no trap); hw*.c,
+  host_cpu.c, host_link.c and platform_mem.c build at -O2: together 40 -> 58 fps. The compositor change was checked
+  on Windows by running the previous gpu2d.c beside it on every render (23,000 renders through boot, the Kennel and
+  Home with dogs: identical pixels and gpu2d_src). The tester's MIT-SHM fallback was not taken (no measurement).
+  host_compile.py's object cache goes by timestamps: touch the files after changing their flags.
 Status: compiles and links (8,311 files) to an ELF32 hard-float binary needing only libc.so.6 (GLIBC_2.34);
-not run yet (no ARM machine or emulator here; Docker Desktop doesn't start on this PC: AF_UNIX socket files
-become inaccessible).
+libEGL/libGLESv2 and libX11 are loaded if present. A tester runs it on a Pi 400 (Debian 13, armhf); not run here.
 
 ## Build
 ```

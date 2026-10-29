@@ -600,6 +600,8 @@ static struct {
     int (*XFlush)(void *);
     unsigned long (*XInternAtom)(void *, const char *, int);
     int (*XSetWMProtocols)(void *, XID, unsigned long *, int);
+    int (*XSync)(void *, int);
+    XID (*XVisualIDFromVisual)(void *);
 } X;
 static void *dpy;
 static XID xwin;
@@ -607,6 +609,153 @@ static XImg *ximg;
 static u32 *frame;      /* scaled picture, win_w x win_h */
 static int frame_w, frame_h;
 static unsigned long wm_delete;
+static int *scale_x;    /* source column of each output column (CPU presenter) */
+static int scale_x_w, scale_x_src;
+
+/* GPU presenter (EGL + OpenGL ES 2 via dlopen): the finished canvas is uploaded as a texture and drawn scaled,
+ * instead of scaling it on the CPU and sending it with XPutImage (20 -> 45 fps on a Pi 400). The few EGL/GL
+ * types and constants used here, as in egl.h/gl2.h. NDOGS_GL=0 turns it off. */
+typedef void *EGLDisplay, *EGLConfig, *EGLSurface, *EGLContext;
+typedef int EGLint;
+typedef unsigned GLuint, GLenum;
+typedef int GLint;
+typedef float GLfloat;
+static struct {
+    EGLDisplay (*eglGetDisplay)(void *);
+    unsigned (*eglInitialize)(EGLDisplay, EGLint *, EGLint *);
+    unsigned (*eglBindAPI)(unsigned);
+    unsigned (*eglChooseConfig)(EGLDisplay, const EGLint *, EGLConfig *, EGLint, EGLint *);
+    unsigned (*eglGetConfigAttrib)(EGLDisplay, EGLConfig, EGLint, EGLint *);
+    EGLSurface (*eglCreateWindowSurface)(EGLDisplay, EGLConfig, XID, const EGLint *);
+    EGLContext (*eglCreateContext)(EGLDisplay, EGLConfig, EGLContext, const EGLint *);
+    unsigned (*eglMakeCurrent)(EGLDisplay, EGLSurface, EGLSurface, EGLContext);
+    unsigned (*eglSwapInterval)(EGLDisplay, EGLint);
+    unsigned (*eglSwapBuffers)(EGLDisplay, EGLSurface);
+    GLuint (*glCreateShader)(GLenum);
+    void (*glShaderSource)(GLuint, int, const char **, const GLint *);
+    void (*glCompileShader)(GLuint);
+    void (*glGetShaderiv)(GLuint, GLenum, GLint *);
+    GLuint (*glCreateProgram)(void);
+    void (*glAttachShader)(GLuint, GLuint);
+    void (*glBindAttribLocation)(GLuint, GLuint, const char *);
+    void (*glLinkProgram)(GLuint);
+    void (*glGetProgramiv)(GLuint, GLenum, GLint *);
+    void (*glUseProgram)(GLuint);
+    void (*glGenTextures)(int, GLuint *);
+    void (*glBindTexture)(GLenum, GLuint);
+    void (*glTexParameteri)(GLenum, GLenum, GLint);
+    void (*glPixelStorei)(GLenum, GLint);
+    void (*glClearColor)(GLfloat, GLfloat, GLfloat, GLfloat);
+    void (*glClear)(unsigned);
+    void (*glViewport)(GLint, GLint, int, int);
+    void (*glTexImage2D)(GLenum, GLint, GLint, int, int, GLint, GLenum, GLenum, const void *);
+    void (*glTexSubImage2D)(GLenum, GLint, GLint, GLint, int, int, GLenum, GLenum, const void *);
+    void (*glVertexAttribPointer)(GLuint, GLint, GLenum, unsigned char, int, const void *);
+    void (*glEnableVertexAttribArray)(GLuint);
+    void (*glDrawArrays)(GLenum, GLint, int);
+    const char *(*glGetString)(GLenum);
+} G;
+static EGLDisplay egl_dpy;
+static EGLSurface egl_surf;
+static int gpu_on, tex_w, tex_h;
+
+static GLuint gl_shader(GLenum type, const char *src)
+{
+    GLuint sh = G.glCreateShader(type);
+    GLint ok = 0;
+    G.glShaderSource(sh, 1, &src, 0);
+    G.glCompileShader(sh);
+    G.glGetShaderiv(sh, 0x8b81 /* GL_COMPILE_STATUS */, &ok);
+    return ok ? sh : 0;
+}
+
+static int gpu_open(XID visual)
+{
+    static const EGLint want[] = { 0x3033, 4 /* SURFACE_TYPE: WINDOW */, 0x3040, 4 /* RENDERABLE_TYPE: ES2 */,
+                                   0x3024, 8, 0x3023, 8, 0x3022, 8 /* red, green, blue size */, 0x3038 /* NONE */ };
+    static const EGLint ctx_attr[] = { 0x3098 /* CONTEXT_CLIENT_VERSION */, 2, 0x3038 };
+    void *el = dlopen("libEGL.so.1", RTLD_NOW), *gl = dlopen("libGLESv2.so.2", RTLD_NOW);
+    EGLConfig cfg[64], c = 0;
+    EGLContext ctx;
+    EGLint n = 0, i, id;
+    GLuint vs, fs, prog, tex;
+    GLint linked = 0;
+    const char *name;
+    if (!el || !gl)
+        return 0;
+#define GET(lib, f) if (!(*(void **)&G.f = dlsym(lib, #f))) return 0;
+    GET(el, eglGetDisplay) GET(el, eglInitialize) GET(el, eglBindAPI) GET(el, eglChooseConfig)
+    GET(el, eglGetConfigAttrib) GET(el, eglCreateWindowSurface) GET(el, eglCreateContext) GET(el, eglMakeCurrent)
+    GET(el, eglSwapInterval) GET(el, eglSwapBuffers)
+    GET(gl, glCreateShader) GET(gl, glShaderSource) GET(gl, glCompileShader) GET(gl, glGetShaderiv)
+    GET(gl, glCreateProgram) GET(gl, glAttachShader) GET(gl, glBindAttribLocation) GET(gl, glLinkProgram)
+    GET(gl, glGetProgramiv) GET(gl, glUseProgram) GET(gl, glGenTextures) GET(gl, glBindTexture)
+    GET(gl, glTexParameteri) GET(gl, glPixelStorei) GET(gl, glClearColor) GET(gl, glClear) GET(gl, glViewport)
+    GET(gl, glTexImage2D) GET(gl, glTexSubImage2D) GET(gl, glVertexAttribPointer)
+    GET(gl, glEnableVertexAttribArray) GET(gl, glDrawArrays) GET(gl, glGetString)
+#undef GET
+    egl_dpy = G.eglGetDisplay(dpy);
+    if (!egl_dpy || !G.eglInitialize(egl_dpy, 0, 0) || !G.eglBindAPI(0x30a0 /* OPENGL_ES_API */) ||
+        !G.eglChooseConfig(egl_dpy, want, cfg, 64, &n))
+        return 0;
+    for (i = 0; i < n && !c; i++)  /* a config for the window's own visual */
+        if (G.eglGetConfigAttrib(egl_dpy, cfg[i], 0x302e /* NATIVE_VISUAL_ID */, &id) && (XID)id == visual)
+            c = cfg[i];
+    if (!c || !(egl_surf = G.eglCreateWindowSurface(egl_dpy, c, xwin, 0)) ||
+        !(ctx = G.eglCreateContext(egl_dpy, c, 0, ctx_attr)) || !G.eglMakeCurrent(egl_dpy, egl_surf, egl_surf, ctx))
+        return 0;
+    name = G.glGetString(0x1f01 /* GL_RENDERER */);
+    if (!name || strstr(name, "llvmpipe") || strstr(name, "softpipe"))  /* software GL: no faster than the CPU path */
+        return 0;
+    /* canvas pixels are 0x00RRGGBB, so bytes B,G,R,0: swapped back in the shader */
+    vs = gl_shader(0x8b31, "attribute vec2 p;attribute vec2 t;varying vec2 uv;"
+                           "void main(){uv=t;gl_Position=vec4(p,0.,1.);}");
+    fs = gl_shader(0x8b30, "precision mediump float;varying vec2 uv;uniform sampler2D img;"
+                           "void main(){gl_FragColor=vec4(texture2D(img,uv).bgr,1.);}");
+    if (!vs || !fs)
+        return 0;
+    prog = G.glCreateProgram();
+    G.glAttachShader(prog, vs);
+    G.glAttachShader(prog, fs);
+    G.glBindAttribLocation(prog, 0, "p");
+    G.glBindAttribLocation(prog, 1, "t");
+    G.glLinkProgram(prog);
+    G.glGetProgramiv(prog, 0x8b82 /* GL_LINK_STATUS */, &linked);
+    if (!linked)
+        return 0;
+    G.glUseProgram(prog);
+    G.glGenTextures(1, &tex);
+    G.glBindTexture(0x0de1 /* GL_TEXTURE_2D */, tex);
+    G.glTexParameteri(0x0de1, 0x2801, 0x2600);  /* min filter: nearest */
+    G.glTexParameteri(0x0de1, 0x2800, 0x2600);  /* mag filter: nearest */
+    G.glTexParameteri(0x0de1, 0x2802, 0x812f);  /* wrap s, t: clamp to edge (allows any texture size in ES 2) */
+    G.glTexParameteri(0x0de1, 0x2803, 0x812f);
+    G.glPixelStorei(0x0cf5 /* GL_UNPACK_ALIGNMENT */, 4);
+    G.glClearColor(0, 0, 0, 1);
+    G.eglSwapInterval(egl_dpy, 0);  /* the game paces itself */
+    fprintf(stderr, "window: GPU presenter (%s)\n", name);
+    return 1;
+}
+
+static int gpu_present(int x, int y, int w, int h)
+{
+    static const GLfloat quad[] = { -1, -1, 0, 1, 1, -1, 1, 1, -1, 1, 0, 0, 1, 1, 1, 0 };  /* x, y, u, v */
+    G.glClear(0x4000 /* GL_COLOR_BUFFER_BIT: borders */);
+    G.glViewport(x, win_h - y - h, w, h);
+    if (tex_w != can_w || tex_h != can_h) {
+        G.glTexImage2D(0x0de1, 0, 0x1908 /* RGBA */, can_w, can_h, 0, 0x1908, 0x1401 /* UNSIGNED_BYTE */, pixels);
+        tex_w = can_w;
+        tex_h = can_h;
+    } else {
+        G.glTexSubImage2D(0x0de1, 0, 0, 0, can_w, can_h, 0x1908, 0x1401, pixels);
+    }
+    G.glVertexAttribPointer(0, 2, 0x1406 /* FLOAT */, 0, 4 * sizeof(GLfloat), quad);
+    G.glVertexAttribPointer(1, 2, 0x1406, 0, 4 * sizeof(GLfloat), quad + 2);
+    G.glEnableVertexAttribArray(0);
+    G.glEnableVertexAttribArray(1);
+    G.glDrawArrays(5 /* GL_TRIANGLE_STRIP */, 0, 4);
+    return G.eglSwapBuffers(egl_dpy, egl_surf) != 0;
+}
 
 static u32 xkey_bit(unsigned long ks)
 {
@@ -637,7 +786,7 @@ int window_open(int s)
     GET(XOpenDisplay); GET(XDefaultScreen); GET(XRootWindow); GET(XCreateSimpleWindow); GET(XSelectInput);
     GET(XMapWindow); GET(XStoreName); GET(XPending); GET(XNextEvent); GET(XLookupKeysym); GET(XDefaultGC);
     GET(XDefaultVisual); GET(XDefaultDepth); GET(XCreateImage); GET(XPutImage); GET(XFlush); GET(XInternAtom);
-    GET(XSetWMProtocols);
+    GET(XSetWMProtocols); GET(XSync); GET(XVisualIDFromVisual);
 #undef GET
     if (!X.XOpenDisplay || !X.XPutImage || !(dpy = X.XOpenDisplay(0)))
         return 0;
@@ -655,6 +804,12 @@ int window_open(int s)
     wm_delete = X.XInternAtom(dpy, "WM_DELETE_WINDOW", 0);
     X.XSetWMProtocols(dpy, xwin, &wm_delete, 1);
     X.XMapWindow(dpy, xwin);
+    if (X.XSync && X.XVisualIDFromVisual && (!getenv("NDOGS_GL") || atoi(getenv("NDOGS_GL")))) {
+        X.XSync(dpy, 0);
+        gpu_on = gpu_open(X.XVisualIDFromVisual(X.XDefaultVisual(dpy, scr)));
+        if (!gpu_on)
+            fprintf(stderr, "window: no GPU presenter, scaling on the CPU\n");
+    }
     return 1;
 }
 
@@ -697,6 +852,12 @@ int window_present(const u32 *top, const u32 *bottom, int sw, int sh)
             break;
         }
     }
+    fit(&x, &y, &w, &h);
+    if (gpu_on) {
+        if (gpu_present(x, y, w, h))
+            return !closed;
+        gpu_on = 0;  /* lost the surface: fall back to the CPU presenter */
+    }
     if (win_w != frame_w || win_h != frame_h || !ximg) {
         int scr = X.XDefaultScreen(dpy);
         free(frame);  /* XCreateImage's image keeps a pointer to it; the old image is leaked (rare) */
@@ -708,13 +869,22 @@ int window_present(const u32 *top, const u32 *bottom, int sw, int sh)
         if (!ximg)
             return !closed;
     }
-    fit(&x, &y, &w, &h);
+    if (scale_x_w != w || scale_x_src != can_w) {  /* no division per pixel */
+        int *t = realloc(scale_x, (size_t)(w > 0 ? w : 1) * sizeof *scale_x);
+        if (!t)
+            return !closed;
+        scale_x = t;
+        for (i = 0; i < w; i++)
+            scale_x[i] = i * can_w / w;
+        scale_x_w = w;
+        scale_x_src = can_w;
+    }
     memset(frame, 0, (size_t)frame_w * frame_h * 4);  /* borders (layout or aspect may have changed) */
     for (j = 0; j < h; j++) {
         const u32 *src = pixels + (j * can_h / h) * can_w;
         u32 *dst = frame + (y + j) * frame_w + x;
         for (i = 0; i < w; i++)
-            dst[i] = src[i * can_w / w] & 0xffffff;
+            dst[i] = src[scale_x[i]] & 0xffffff;
     }
     X.XPutImage(dpy, xwin, X.XDefaultGC(dpy, X.XDefaultScreen(dpy)), ximg, 0, 0, 0, 0, (unsigned)frame_w,
                 (unsigned)frame_h);

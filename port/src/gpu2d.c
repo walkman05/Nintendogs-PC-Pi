@@ -58,9 +58,32 @@ typedef struct {
     u32 dispcnt;
     int bgvram, objvram, bgext, objext;
     const u16 *bgpal, *objpal;
+    const u8 *bgmem, *objmem;
+    u32 bgsize, objsize;
     u32 charofs, scrofs;  /* DISPCNT char/screen base (engine A) */
     int mosh, mosv;       /* BG mosaic sizes */
 } Gpu;
+
+/* BG/OBJ VRAM is CPU-visible (vram.c): read it in place, bounds-checked like vram_read*, rather than a call per
+ * pixel. Extended palettes are hidden roles and still go through vram_read*. */
+static inline u8 bg_read8(const Gpu *g, u32 offset)
+{
+    return offset < g->bgsize ? g->bgmem[offset] : 0;
+}
+static inline u16 bg_read16(const Gpu *g, u32 offset)
+{
+    offset &= ~1u;
+    return offset < g->bgsize ? *(const u16 *)(g->bgmem + offset) : 0;
+}
+static inline u8 obj_read8(const Gpu *g, u32 offset)
+{
+    return offset < g->objsize ? g->objmem[offset] : 0;
+}
+static inline u16 obj_read16(const Gpu *g, u32 offset)
+{
+    offset &= ~1u;
+    return offset < g->objsize ? *(const u16 *)(g->objmem + offset) : 0;
+}
 
 /* ---- text BGs ------------------------------------------------------------------------------------------------ */
 static u32 bg_ext_color(const Gpu *g, int slot, int pal, int c)
@@ -92,17 +115,17 @@ static void render_text(const Gpu *g, int bg, int y, u32 *line)
         int xx = (x + hofs) & (w - 1);
         u32 maddr = rowbase + (u32)(xx >> 8) * 0x800u + (u32)((xx >> 3) & 31) * 2u;
         int px, py, c;
-        if (maddr != lastaddr) { entry = vram_read16(g->bgvram, maddr); lastaddr = maddr; }
+        if (maddr != lastaddr) { entry = bg_read16(g, maddr); lastaddr = maddr; }
         px = xx & 7;
         py = yy & 7;
         if (entry & 0x400) px = 7 - px;
         if (entry & 0x800) py = 7 - py;
         if (bpp8) {
-            c = vram_read8(g->bgvram, charbase + (u32)(entry & 0x3ff) * 64u + (u32)(py * 8 + px));
+            c = bg_read8(g, charbase + (u32)(entry & 0x3ff) * 64u + (u32)(py * 8 + px));
             if (!c) { line[x] = 0; continue; }
             line[x] = (g->dispcnt & 0x40000000u) ? bg_ext_color(g, slot, entry >> 12, c) : col(g->bgpal[c]);
         } else {
-            c = vram_read8(g->bgvram, charbase + (u32)(entry & 0x3ff) * 32u + (u32)(py * 4 + (px >> 1)));
+            c = bg_read8(g, charbase + (u32)(entry & 0x3ff) * 32u + (u32)(py * 4 + (px >> 1)));
             c = (px & 1) ? (c >> 4) : (c & 15);
             if (!c) { line[x] = 0; continue; }
             line[x] = col(g->bgpal[(entry >> 12) * 16 + c]);
@@ -164,28 +187,28 @@ static void render_affine(const Gpu *g, int bg, int kind, int y, u32 *line)
         }
         switch (kind) {
         case AFF_TILE8: {
-            int t = vram_read8(g->bgvram, scrbase + (u32)(ty >> 3) * (u32)(w >> 3) + (u32)(tx >> 3));
-            int c = vram_read8(g->bgvram, charbase + (u32)t * 64u + (u32)((ty & 7) * 8 + (tx & 7)));
+            int t = bg_read8(g, scrbase + (u32)(ty >> 3) * (u32)(w >> 3) + (u32)(tx >> 3));
+            int c = bg_read8(g, charbase + (u32)t * 64u + (u32)((ty & 7) * 8 + (tx & 7)));
             if (c) out = col(g->bgpal[c]);
             break;
         }
         case AFF_MAP16: {
-            u16 e = vram_read16(g->bgvram, scrbase + ((u32)(ty >> 3) * (u32)(w >> 3) + (u32)(tx >> 3)) * 2u);
+            u16 e = bg_read16(g, scrbase + ((u32)(ty >> 3) * (u32)(w >> 3) + (u32)(tx >> 3)) * 2u);
             int px = tx & 7, py = ty & 7, c;
             if (e & 0x400) px = 7 - px;
             if (e & 0x800) py = 7 - py;
-            c = vram_read8(g->bgvram, charbase + (u32)(e & 0x3ff) * 64u + (u32)(py * 8 + px));
+            c = bg_read8(g, charbase + (u32)(e & 0x3ff) * 64u + (u32)(py * 8 + px));
             if (c) out = useext ? bg_ext_color(g, bg, e >> 12, c) : col(g->bgpal[c]);
             break;
         }
         case AFF_BMP8: case AFF_LARGE: {
-            int c = vram_read8(g->bgvram, bmpbase + (u32)ty * (u32)w + (u32)tx);
+            int c = bg_read8(g, bmpbase + (u32)ty * (u32)w + (u32)tx);
             if (c) out = col(g->bgpal[c]);
             break;
         }
         case AFF_BMP16: {
             u32 off = bmpbase + ((u32)ty * (u32)w + (u32)tx) * 2u;
-            u16 c = vram_read16(g->bgvram, off);
+            u16 c = bg_read16(g, off);
             if (c & 0x8000) {
                 out = col(c);
                 if (pa == 0x100 && pc == 0 && pd == 0x100 && pbv == 0)
@@ -310,7 +333,7 @@ static void render_objs(const Gpu *g, int y, ObjLine *ol)
             if (mode == 3) {
                 u32 stride = bmp1d ? (u32)w * 2u : ((dc & 0x20) ? 512u : 256u);
                 u32 off = tilebase + (u32)ty * stride + (u32)tx * 2u;
-                u16 p = vram_read16(g->objvram, off);
+                u16 p = obj_read16(g, off);
                 if (!(p & 0x8000)) continue;
                 c = col(p);
                 srcv = affine || (a1 & 0x3000) ? 0 : GPU2D_SRC_VRAM | (u32)g->objvram << 24 | off;
@@ -319,7 +342,7 @@ static void render_objs(const Gpu *g, int y, ObjLine *ol)
                 int ci;
                 if (map1d) addr += ((u32)(ty >> 3) * (u32)(w >> 3) + (u32)(tx >> 3)) * 64u;
                 else addr += (u32)(ty >> 3) * 1024u + (u32)(tx >> 3) * 64u;
-                ci = vram_read8(g->objvram, addr);
+                ci = obj_read8(g, addr);
                 if (!ci) continue;
                 if (mode == 2) { ol->win[x] = 1; continue; }
                 c = (dc & 0x80000000u) ? col(vram_read16(g->objext, (u32)(a2 >> 12) * 512u + (u32)ci * 2u))
@@ -329,7 +352,7 @@ static void render_objs(const Gpu *g, int y, ObjLine *ol)
                 int ci;
                 if (map1d) addr += ((u32)(ty >> 3) * (u32)(w >> 3) + (u32)(tx >> 3)) * 32u;
                 else addr += (u32)(ty >> 3) * 1024u + (u32)(tx >> 3) * 32u;
-                ci = vram_read8(g->objvram, addr);
+                ci = obj_read8(g, addr);
                 ci = (tx & 1) ? (ci >> 4) : (ci & 15);
                 if (!ci) continue;
                 if (mode == 2) { ol->win[x] = 1; continue; }
@@ -426,6 +449,7 @@ void gpu2d_render(int engine, const u8 *io, const u32 *frame3d, u32 *out)
     int bgkind[4];          /* -1 none, 0 text, 1 3D, 2+ affine kind */
     int bgprio[4];
     int bgmos[4];
+    int bgorder[4], nbg = 0;
     u16 bldcnt, bldalpha, bldy;
     int eva, evb, evy, effect;
     u32 backdrop;
@@ -445,9 +469,10 @@ void gpu2d_render(int engine, const u8 *io, const u32 *frame3d, u32 *out)
     }
     if (dispmode == 2) {
         u32 bank = ((dc >> 18) & 3) * 0x20000u;
+        const u16 *pixels = (const u16 *)(vram_cpu_view(VRAM_LCDC, 0) + bank);
         for (y = 0; y < DS_H; y++) {
             for (x = 0; x < DS_W; x++)
-                out[y * DS_W + x] = s_c15to24[vram_read16(VRAM_LCDC, bank + (u32)(y * DS_W + x) * 2u) & 0x7fff];
+                out[y * DS_W + x] = s_c15to24[pixels[y * DS_W + x] & 0x7fff];
             master_brightness(r, out + y * DS_W);
         }
         return;
@@ -469,6 +494,8 @@ void gpu2d_render(int engine, const u8 *io, const u32 *frame3d, u32 *out)
     g.dispcnt = dc;
     g.bgvram = engine ? VRAM_BG_B : VRAM_BG_A;
     g.objvram = engine ? VRAM_OBJ_B : VRAM_OBJ_A;
+    g.bgmem = vram_cpu_view(g.bgvram, &g.bgsize);
+    g.objmem = vram_cpu_view(g.objvram, &g.objsize);
     g.bgext = engine ? VRAM_BGEXTPAL_B : VRAM_BGEXTPAL_A;
     g.objext = engine ? VRAM_OBJEXTPAL_B : VRAM_OBJEXTPAL_A;
     g.bgpal = pal_bg(engine);
@@ -508,6 +535,19 @@ void gpu2d_render(int engine, const u8 *io, const u32 *frame3d, u32 *out)
         bgprio[i] = cnt & 3;
         bgmos[i] = (cnt & 0x40) != 0 && k != 1;
     }
+    /* Priorities are constant for the whole frame. Keep BG index as the stable
+     * tie-breaker, rather than searching all four priorities for every pixel. */
+    for (i = 0; i < 4; i++) {
+        int at;
+        if (bgkind[i] < 0) continue;
+        at = nbg;
+        while (at > 0 && bgprio[bgorder[at - 1]] > bgprio[i]) {
+            bgorder[at] = bgorder[at - 1];
+            at--;
+        }
+        bgorder[at] = i;
+        nbg++;
+    }
 
     bldcnt = rd16(r, 0x50);
     bldalpha = rd16(r, 0x52);
@@ -544,7 +584,7 @@ void gpu2d_render(int engine, const u8 *io, const u32 *frame3d, u32 *out)
         if (objon || ow) render_objs(&g, y, &ol);
 
         for (x = 0; x < DS_W; x++) {
-            int mask, p, n = 0, l[2];
+            int mask, k, n = 0, l[2], obj_pending;
             u32 c[2], res;
             if (!anywin) mask = 0x3f;
             else if (w0 && win_inside(x, win0h)) mask = winin & 0x3f;
@@ -552,15 +592,20 @@ void gpu2d_render(int engine, const u8 *io, const u32 *frame3d, u32 *out)
             else if (ow && ol.win[x]) mask = (winout >> 8) & 0x3f;
             else mask = winout & 0x3f;
 
-            for (p = 0; p < 4 && n < 2; p++) {
-                if (objon && (mask & 0x10) && (ol.color[x] & OPAQUE) && ol.prio[x] == p) {
+            obj_pending = objon && (mask & 0x10) && (ol.color[x] & OPAQUE);
+            for (k = 0; k < nbg && n < 2; k++) {
+                i = bgorder[k];
+                if (!(mask & (1 << i)) || !(bgline[i][x] & OPAQUE)) continue;
+                /* OBJ precedes a BG of equal priority, matching the DS rule. */
+                if (obj_pending && ol.prio[x] <= bgprio[i]) {
                     l[n] = 4; c[n] = ol.color[x]; n++;
+                    obj_pending = 0;
+                    if (n == 2) break;
                 }
-                for (i = 0; i < 4 && n < 2; i++) {
-                    if (bgkind[i] < 0 || bgprio[i] != p || !(mask & (1 << i))) continue;
-                    if (!(bgline[i][x] & OPAQUE)) continue;
-                    l[n] = i; c[n] = bgline[i][x]; n++;
-                }
+                l[n] = i; c[n] = bgline[i][x]; n++;
+            }
+            if (obj_pending && n < 2) {
+                l[n] = 4; c[n] = ol.color[x]; n++;
             }
             while (n < 2) { l[n] = 5; c[n] = backdrop; n++; }
 
@@ -604,3 +649,4 @@ void gpu2d_render(int engine, const u8 *io, const u32 *frame3d, u32 *out)
         master_brightness(r, row);
     }
 }
+

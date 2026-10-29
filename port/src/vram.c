@@ -164,6 +164,16 @@ u32 vram_read32(int role, u32 offset)
     return p ? *(const u32 *)p : 0;
 }
 
+/* A CPU-visible role's memory (and its size), 0 for a hidden role */
+const u8 *vram_cpu_view(int role, u32 *size)
+{
+    if (role < 0 || role >= VRAM_ROLE_COUNT || !role_base[role])
+        return 0;
+    if (size)
+        *size = role_size[role];
+    return (const u8 *)role_base[role];
+}
+
 /* Bank A-D contents for display capture: where the bank currently lives (its CPU window, normally LCDC). */
 u16 *vram_bank_ptr(int bank)
 {
