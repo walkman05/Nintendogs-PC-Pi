@@ -348,8 +348,9 @@ pointers): 64-bit Pi OS needs armhf multiarch libraries, and a Pi 5 on its defau
   are made writable on demand. The write bit comes from the fault status (error_code bit 11).
 - main.c's Linux crash/watchdog backtraces walk ARM frames (fp -> saved lr, fp[-1] -> caller's fp).
 - mic.c: ALSA capture (dlopen, non-blocking, mono S16 at the game's rate).
-- Tuned for the Pi 3B: `-mcpu=cortex-a53 -mfpu=neon-fp-armv8` (runs on Pi 3/4/5, not a Pi 2 v1.1), auto resolution
-  capped at 1x, widescreen off unless NDOGS_WIDE=1, interpolation only with NDOGS_FPS; workers = CPUs - 1. (x86
+- For the Pi 3B and Pi 400/4: `-march=armv8-a+crc -mtune=cortex-a72 -mfpu=neon-fp-armv8` (runs on Pi 3/4/5, not a
+  Pi 2 v1.1); auto resolution capped at 2x on an A72/A76 (Pi 4/400/5) and 1x on an A53 (Pi 3B), from /proc/cpuinfo's
+  CPU part; widescreen off unless NDOGS_WIDE=1, interpolation only with NDOGS_FPS; workers = CPUs - 1. (x86
   defaults to one worker per physical core: half the logical CPUs; with hyper-threads too a 2x frame took 12 ms
   instead of 6 on 8 cores / 16 threads.)
 - audio.c: audio_underruns/drops were defined only in the Windows branch (any Linux link failed).

@@ -46,16 +46,32 @@ static int scale_req = -1;               /* internal resolution 1-MAXS, 0 auto *
 static int filter_linear = 1;             /* GPU presenter: bilinear (1) or nearest (0) scaling, F7 */
 static void fit(int *x, int *y, int *w, int *h);
 #ifdef __arm__
-#define AUTO_MAXS 1                       /* a Raspberry Pi 3B can't render more in time (NDOGS_SCALE=2 on a Pi 4) */
+/* Raspberry Pi: up to 2x on a Pi 4/400 (Cortex-A72) or 5 (A76), 1x on a Pi 3B (A53): /proc/cpuinfo's CPU part */
+static int arm_auto_maxs(void)
+{
+    char line[256];
+    int fast = 0;
+    FILE *f = fopen("/proc/cpuinfo", "r");
+    if (!f)
+        return 1;
+    while (fgets(line, sizeof line, f))
+        if (!strncmp(line, "CPU part", 8) && (strstr(line, "0xd08") || strstr(line, "0xd0b")))
+            fast = 1;
+    fclose(f);
+    return fast ? 2 : 1;
+}
+#define AUTO_MAXS auto_maxs
+static int auto_maxs = 1;
 #else
 #define AUTO_MAXS MAXS
 #endif
 
 /* Internal resolution. Auto (the default): the smallest whole multiple of the DS resolution that covers the size a
  * screen is shown at, so the picture is only ever scaled down a little (sharp) instead of up (blurry); up to 4x
- * (2x on ARM), and lowered while the machine can't keep the game at full speed (window_slow; a resize tries again).
+ * (on a Raspberry Pi 2x on a Pi 4/400/5, 1x on a Pi 3B), and lowered while the machine can't keep the game at full
+ * speed (window_slow; a resize tries again).
  * NDOGS_SCALE=1-4 or F8 fixes it. */
-static int auto_cap = AUTO_MAXS;
+static int auto_cap = MAXS;  /* (set from AUTO_MAXS on the first window_scale) */
 int window_scale(void);
 
 /* video.c: the game can't keep up at this resolution: auto goes one step down */
@@ -84,6 +100,10 @@ int window_scale(void)
         layout = layout_mode == 1;
         aspect = getenv("NDOGS_ASPECT") ? atoi(getenv("NDOGS_ASPECT")) % 3 : 0;
         scale_req = getenv("NDOGS_SCALE") ? atoi(getenv("NDOGS_SCALE")) : 0;
+#ifdef __arm__
+        auto_maxs = arm_auto_maxs();
+#endif
+        auto_cap = AUTO_MAXS;
         scale_req = scale_req < 0 ? 0 : scale_req > MAXS ? MAXS : scale_req;
     }
     if (!scale_req) {
