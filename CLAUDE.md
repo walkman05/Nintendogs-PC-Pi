@@ -265,6 +265,27 @@ found no other case; variadic functions are safe (gcc pushes the unnamed registe
 - Presenting (Windows): an OpenGL 1.1 presenter thread (opengl32.dll loaded at run time) uploads each finished
   canvas as a texture and swaps with vsync; the game thread only copies the frame, so the monitor never delays
   the game. `NDOGS_GL=0` uses GDI instead, `NDOGS_VSYNC=0` turns vsync off. Linux still uses XPutImage.
+- 3D on the GPU (`port/src/gpu3d_gl.c`, Windows, default; `NDOGS_GPU3D=0` the CPU rasteriser, which stays the
+  reference and the fallback when OpenGL 3.3 + texture barriers are missing): render_list hands the sorted polygon
+  list over (gpu3d_gl.h); a context of its own on a hidden window (the game thread). Each polygon row is a
+  one-pixel-high quad whose span and edge attributes the vertex shader works out exactly as raster_poly does per
+  scanline; the fragment shader does raster_poly's per-pixel rules (texture formats from an integer atlas cached by
+  parameters + a hash of the texel/palette bytes, modulate/decal/toon/highlight, alpha test, translucent polygon
+  IDs, blending with the destination alpha, shadow stencil, depth-equal margin, Z/W buffer, fog flag). Buffers:
+  colour (RGBA8UI, 6-bit), attributes (RG32UI: depth, IDs, flags) and a 32-bit float depth buffer. Ordinary opaque
+  polygons draw in one call with the hardware depth test; translucent/shadow/depth-equal ones read the buffers
+  they write, in batches of non-overlapping polygons between texture barriers. A full-screen pass does edge
+  marking, fog and 0x80RRGGBB, another the native frame; both are read back through a pixel buffer behind a fence,
+  waited for asleep (a plain glReadPixels spins a core). With GL_ARB_gpu_shader5 the shaders compute as the CPU
+  does (`precise`, divisions corrected to IEEE rounding by one FMA step), and the CPU rasteriser evaluates each
+  pixel from the span start instead of stepping (no drift): the output is bit-identical, high-res and native frame,
+  at 2x, 3x and 4x, wide, through boot, the intro, the Kennel, Home with dogs and petting (`NDOGS_GPU3D=2` renders
+  both and compares; `NDOGS_GLCMP=1` per render, `NDOGS_GLDUMP=<render>,...` / `NDOGS_GLDUMPMIN=<pixels>` save
+  both and the difference). `NDOGS_VLOG=1` logs pack/draw/wait/copy, `NDOGS_GLPROF=1` GPU time per pass.
+  Measured at Home (headless, 1.6 wide, interpolating): whole process 3.1 -> 1.25 cores at 2x, 3.6 -> 1.25 at 3x;
+  GPU time 0.25 ms at 1x, ~0.6 ms at 2x, 1.7-3 ms at 4x on an RTX 4060 Ti, which the driver keeps at ~600 MHz under
+  this light load, so the wait (+~0.5 ms latency) is most of a 3D frame's 2-3 ms. video.c's compose() and widen()
+  run in row bands on the workers (idle now): 3x, 1.78 wide, 2.4 -> 0.9 ms and 2.4 -> 0.45 ms per frame.
 - Not done: microphone (the full game's name calling), direct channel/stream sound commands (unused so far).
 
 ## Full-game mode

@@ -13,11 +13,11 @@ FLAGS = ['-m32', '-std=gnu99', '-g1', '-fno-omit-frame-pointer', '-fwrapv', '-fn
          '-I', os.path.join(ROOT, 'include'), '-I', os.path.join(ROOT, 'port', 'include')]
 # game code optimisation (NDOGS_OPT, default -O0: -O1 exposes undefined behaviour in the decompiled C); the renderers always build at -O2
 GAME_OPT = os.environ.get('NDOGS_OPT', '-O0')
-FAST_SRC = ('gpu2d.c', 'gpu3d.c', 'video.c', 'vram.c', 'window.c', 'audio.c', 'snd.c', 'workers.c', 'setup.c',
+FAST_SRC = ('gpu2d.c', 'gpu3d.c', 'gpu3d_gl.c', 'video.c', 'vram.c', 'window.c', 'audio.c', 'snd.c', 'workers.c', 'setup.c',
             'hw.c', 'hw_trap.c', 'hw_card.c', 'host_cpu.c', 'host_link.c', 'platform_mem.c')
 # the renderers' float code on 32-bit x86 uses SSE2, not the x87 default (x87 float-to-int conversions are slow, and
 # the rasteriser does several per pixel); the game code keeps the defaults
-SSE_SRC = ('gpu2d.c', 'gpu3d.c', 'video.c', 'window.c')
+SSE_SRC = ('gpu2d.c', 'gpu3d.c', 'gpu3d_gl.c', 'video.c', 'window.c')
 FLAGS += os.environ.get('NDOGS_CFLAGS', '').split()  # extra flags, e.g. sanitizer checks for a test build
 DATA_RE = re.compile(r'\b(?:data|bss)_(?:ov[0-9]+_)?([0-9a-f]{8})(?:__\d+)?\b')
 OBJDIR = None
@@ -273,7 +273,7 @@ def main():
             subprocess.run([sys.executable, os.path.join(ROOT, 'port', 'tools', 'gen_hosttabs.py'), tabs] +
                            ([os.path.join(retail, 'host')] if TARGET == 'retail' else []), check=True)
             extras = [os.path.join(ROOT, 'port', 'src', x) for x in
-                      ('host_cpu.c', 'host_link.c', 'hw.c', 'hw_trap.c', 'hw_card.c', 'host_threads.c', 'vram.c', 'video.c', 'window.c', 'audio.c', 'snd.c', 'workers.c', 'gpu2d.c', 'gpu3d.c', 'platform_mem.c', 'loader.c', 'save.c', 'mic.c', 'setup.c', 'main.c')] + [gen, tabs]
+                      ('host_cpu.c', 'host_link.c', 'hw.c', 'hw_trap.c', 'hw_card.c', 'host_threads.c', 'vram.c', 'video.c', 'window.c', 'audio.c', 'snd.c', 'workers.c', 'gpu2d.c', 'gpu3d.c', 'gpu3d_gl.c', 'platform_mem.c', 'loader.c', 'save.c', 'mic.c', 'setup.c', 'main.c')] + [gen, tabs]
             extras = [x for x in extras if os.path.exists(x)] + [x for x in os.environ.get('NDOGS_EXTRA_SRC', '').split(';') if x]
             hf = os.path.join(ROOT, 'port', 'hostfuncs')
             extras += [os.path.join(hf, x) for x in sorted(os.listdir(hf)) if x.endswith('.c')]

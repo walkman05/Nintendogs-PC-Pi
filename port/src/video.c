@@ -53,13 +53,23 @@ static void save_bmp(int frame, const u32 *top, int tw, int th, const u32 *botto
 }
 
 /* compose one engine's screen at scale S into out (see above); bright: apply the engine's master brightness to
- * the high resolution pixels (native pixels already have whatever the engine applied) */
-static void compose(int engine, const u32 *native, u32 *out, int S, int bright)
+ * the high resolution pixels (native pixels already have whatever the engine applied). Bands of rows run on the
+ * worker threads (idle while the 3D is drawn by the GPU). */
+typedef struct {
+    int engine, S, bright, bands;
+    const u32 *native;
+    u32 *out;
+} ComposeJob;
+
+static void compose_band(int band, void *arg)
 {
-    const u32 *src = gpu2d_src[engine], *h3d = gx_hires();
+    const ComposeJob *j = arg;
+    int engine = j->engine, S = j->S, bright = j->bright;
+    const u32 *src = gpu2d_src[engine], *h3d = gx_hires(), *native = j->native;
+    u32 *out = j->out;
     int W = DS_W * S, H3 = gx_stride(), x, y, sx, sy;
     int hofs = engine ? 0 : *(u16 *)(io + 0x10) & 0x1ff;
-    for (y = 0; y < DS_H; y++)
+    for (y = DS_H * band / j->bands; y < DS_H * (band + 1) / j->bands; y++)
         for (x = 0; x < DS_W; x++) {
             u32 sv = src[y * DS_W + x], c = native[y * DS_W + x] & 0xffffff;
             u32 *o = out + y * S * W + x * S;
@@ -94,6 +104,24 @@ static void compose(int engine, const u32 *native, u32 *out, int S, int bright)
                     o[sy * W + sx] = v;
                 }
         }
+}
+
+static int row_bands(int rows)
+{
+    int n = workers_count() * 2;
+    return n > rows ? rows : n < 1 ? 1 : n;
+}
+
+static void compose(int engine, const u32 *native, u32 *out, int S, int bright)
+{
+    ComposeJob j;
+    j.engine = engine;
+    j.S = S;
+    j.bright = bright;
+    j.native = native;
+    j.out = out;
+    j.bands = row_bands(DS_H);
+    workers_run(j.bands, compose_band, &j);
 }
 
 static u16 rgb15(u32 c)
@@ -445,27 +473,25 @@ static void interp_2d(float t, const Frame *fa, const Frame *fb)
 /* Widescreen: engine A's screen (scr, a DS screen at scale S) with the 3D renderer's extra width or height around
  * it (from the frame just rendered; where it has nothing, the backdrop), master brightness applied as on the
  * screen. Into out; its size in *w x *h. Uses the registers in io. */
-static const u32 *widen(const u32 *scr, int S, u32 *out, int *w, int *h, const Frame *f)
+typedef struct {
+    const u32 *scr, *h3;
+    u32 *out;
+    const Frame *f;
+    int S, W, H, sw, sh, ox, oy, st, bright, bands;
+    u32 back;
+} WidenJob;
+
+static void widen_band(int band, void *arg)
 {
-    int wpx = gx_wide_px(), hpx = gx_tall_px(), W = wpx * S, H = hpx * S, sw = DS_W * S, sh = DS_H * S;
-    int ox = (wpx - DS_W) / 2 * S, oy = (hpx - DS_H) / 2 * S, st = gx_stride(), x, y;
-    const u32 *h3 = gx_hires_wide();
-    u16 bd = *(volatile u16 *)0x05000000u;  /* engine A's backdrop colour */
-    u32 back = (u32)((bd & 31) * 255 / 31) << 16 | (u32)(((bd >> 5) & 31) * 255 / 31) << 8 | ((bd >> 10) & 31) * 255 / 31;
-    int bright = (*(u16 *)(io + 0x6c) >> 14) % 3 && (*(u16 *)(io + 0x6c) & 31);
-    if ((wpx == DS_W && hpx == DS_H) || gx_scale() != S) {
-        *w = sw;
-        *h = sh;
-        return scr;
-    }
-    if (bright)
-        back = gpu2d_bright_pixel(0, io, back);
-    for (y = 0; y < H; y++) {
-        const u32 *hr = h3 + y * st;
-        u32 *o = out + y * W;
+    const WidenJob *j = arg;
+    const Frame *f = j->f;
+    int S = j->S, W = j->W, sw = j->sw, sh = j->sh, ox = j->ox, oy = j->oy, bright = j->bright, x, y;
+    for (y = j->H * band / j->bands; y < j->H * (band + 1) / j->bands; y++) {
+        const u32 *hr = j->h3 + y * j->st;
+        u32 *o = j->out + y * W;
         int inside = y >= oy && y < oy + sh;
         if (inside)
-            memcpy(o + ox, scr + (y - oy) * sw, (size_t)sw * 4);
+            memcpy(o + ox, j->scr + (y - oy) * sw, (size_t)sw * 4);
         for (x = 0; x < W; x++) {
             u32 c;
             if (inside && x == ox)
@@ -495,11 +521,41 @@ static const u32 *widen(const u32 *scr, int S, u32 *out, int *w, int *h, const F
                     o[x] = bright ? gpu2d_bright_pixel(0, io, c) : c & 0xffffff;
                 continue;
             }
-            o[x] = c >> 31 ? (bright ? gpu2d_bright_pixel(0, io, c) : c & 0xffffff) : back;
+            o[x] = c >> 31 ? (bright ? gpu2d_bright_pixel(0, io, c) : c & 0xffffff) : j->back;
         }
     }
-    *w = W;
-    *h = H;
+}
+
+static const u32 *widen(const u32 *scr, int S, u32 *out, int *w, int *h, const Frame *f)
+{
+    int wpx = gx_wide_px(), hpx = gx_tall_px();
+    u16 bd = *(volatile u16 *)0x05000000u;  /* engine A's backdrop colour */
+    WidenJob j;
+    if ((wpx == DS_W && hpx == DS_H) || gx_scale() != S) {
+        *w = DS_W * S;
+        *h = DS_H * S;
+        return scr;
+    }
+    j.scr = scr;
+    j.h3 = gx_hires_wide();
+    j.out = out;
+    j.f = f;
+    j.S = S;
+    j.W = wpx * S;
+    j.H = hpx * S;
+    j.sw = DS_W * S;
+    j.sh = DS_H * S;
+    j.ox = (wpx - DS_W) / 2 * S;
+    j.oy = (hpx - DS_H) / 2 * S;
+    j.st = gx_stride();
+    j.bright = (*(u16 *)(io + 0x6c) >> 14) % 3 && (*(u16 *)(io + 0x6c) & 31);
+    j.back = (u32)((bd & 31) * 255 / 31) << 16 | (u32)(((bd >> 5) & 31) * 255 / 31) << 8 | ((bd >> 10) & 31) * 255 / 31;
+    if (j.bright)
+        j.back = gpu2d_bright_pixel(0, io, j.back);
+    j.bands = row_bands(j.H);
+    workers_run(j.bands, widen_band, &j);
+    *w = j.W;
+    *h = j.H;
     return out;
 }
 

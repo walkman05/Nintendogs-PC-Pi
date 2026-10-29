@@ -11,28 +11,8 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include "ds_video.h"
+#include "gpu3d_gl.h"
 extern double now_ms(void);
-
-#define MAX_POLY 2048
-#define MAX_PV 10 /* a quad clipped against 6 planes */
-
-enum { VX, VY, VZ, VW, VR, VG, VB, VS, VT, VNF };
-typedef struct { float f[VNF]; } vtx_t;
-
-typedef struct {
-    int nv;
-    u32 attr, tex, pal;
-    u8 translucent;
-    float ymin, ymax;
-    vtx_t v[MAX_PV]; /* screen: x,y pixels; z = Z-buffer value (0..0xffffff); w = clip w (4096 = 1.0) */
-} poly_t;
-
-typedef struct {
-    int npoly;
-    u32 swapflags;
-    poly_t poly[MAX_POLY];
-} plist_t;
 
 static plist_t g_list[2];
 static int g_cur;          /* list being filled */
@@ -969,6 +949,13 @@ static inline u8 tex8(u32 off) { return tex_mem[off & 0x7ffff]; }
 static inline u16 tex16(u32 off) { off &= 0x7fffe; return (u16)(tex_mem[off] | tex_mem[off + 1] << 8); }
 static inline u32 tex32(u32 off) { off &= 0x7fffc; return *(const u32 *)(tex_mem + off); }
 static inline u16 pal16(u32 off) { off &= 0x1fffe; return (u16)(texpal_mem[off] | texpal_mem[off + 1] << 8); }
+static unsigned g_texgen;  /* counts refreshes of tex_mem/texpal_mem (the OpenGL renderer's texture cache) */
+static void flatten_tex(void)
+{
+    vram_flatten(VRAM_TEX, tex_mem, sizeof tex_mem);
+    vram_flatten(VRAM_TEXPAL, texpal_mem, 0x18000);
+    g_texgen++;
+}
 
 static inline int wrapc(int c, int size, int rep, int flip)
 {
@@ -1061,6 +1048,26 @@ static int tex_sample(const texinfo_t *ti, int s, int t, u16 *col)
         *col = 0x7fff;
         return 31;
     }
+}
+
+/* a whole texture (TEXIMAGE_PARAM tex, PLTT_BASE pal; w x h texels) as tex_sample sees it: col | alpha << 16 */
+void gx_tex_decode(u32 tex, u32 pal, int w, int h, u32 *dst)
+{
+    texinfo_t ti;
+    int x, y;
+    u16 col = 0;
+    memset(&ti, 0, sizeof ti);
+    ti.addr = (tex & 0xffff) << 3;
+    ti.fmt = (tex >> 26) & 7;
+    ti.w = w;
+    ti.h = h;
+    ti.transp0 = (tex >> 29) & 1;
+    ti.palbase = ti.fmt == 2 ? pal << 3 : pal << 4;
+    for (y = 0; y < h; y++)
+        for (x = 0; x < w; x++) {
+            int a = tex_sample(&ti, x, y, &col);
+            *dst++ = a ? (u32)col | (u32)a << 16 : 0;
+        }
 }
 
 typedef struct {
@@ -1170,18 +1177,17 @@ static void raster_poly(const poly_t *p, const rctx_t *rc, int by0, int by1, int
         f = xr - 0.5f; x1 = (int)f; if ((float)x1 < f) x1++;
         if (x1 <= x0) continue;
         dx = xr - xl;
-        for (k = 0; k < NA; k++) {
+        for (k = 0; k < NA; k++)
             st[k] = dx > 0 ? (R[k] - L[k]) / dx : 0;
-            cur[k] = L[k] + ((float)x0 + 0.5f - xl) * st[k];
-        }
-        if (x0 < 0) {
-            for (k = 0; k < NA; k++) cur[k] += st[k] * (float)(-x0);
+        if (x0 < 0)
             x0 = 0;
-        }
         if (x1 > RW) x1 = RW;
         g_frags[by0 & 63] += x1 - x0;
-        for (x = x0; x < x1; x++, ({ for (k = 0; k < NA; k++) cur[k] += st[k]; })) {
+        for (x = x0; x < x1; x++) {
             int idx = y * RW + x;
+            float fx = (float)x + 0.5f - xl;  /* each pixel from the span start (no drift; as gpu3d_gl.c) */
+            for (k = 0; k < NA; k++)
+                cur[k] = L[k] + fx * st[k];
             float w = 1.0f / cur[0];
             u32 depth, dd;
             int r, g, b, a, pass;
@@ -1502,10 +1508,8 @@ static void render_list(const plist_t *L, const u8 *io, u32 *out, int flatten)
 
     double tp0 = now_ms(), tp1, tp2;
     static RenderJob rj;
-    if (flatten) {  /* interpolated frames reuse the textures of the list's VBlank */
-        vram_flatten(VRAM_TEX, tex_mem, sizeof tex_mem);
-        vram_flatten(VRAM_TEXPAL, texpal_mem, 0x18000);
-    }
+    if (flatten)  /* interpolated frames reuse the textures of the list's VBlank */
+        flatten_tex();
 
     /* opaque polygons first (Y-sorted), then translucent (Y-sorted unless manual sort) */
     g_sort_polys = L->poly;
@@ -1521,6 +1525,19 @@ static void render_list(const plist_t *L, const u8 *io, u32 *out, int flatten)
     {
         u32 r = c5to6(clr & 31), g = c5to6((clr >> 5) & 31), b = c5to6((clr >> 10) & 31);
         cc = r | (g << 8) | (b << 16) | (((clr >> 16) & 31) << 24);
+    }
+    {   /* the OpenGL renderer (NDOGS_GPU3D; 2: both, compared) */
+        gl3d_job_t gj = { L, order, n, io, g_scale, RW, RH, g_xoff, g_yoff, tex_mem, texpal_mem, g_texgen, g_hires, out };
+        int gm = gl3d_mode();
+        if (gm && gl3d_render(&gj)) {
+            if (gm == 1) {
+                if (getenv("NDOGS_VLOG"))
+                    fprintf(stderr, "3d: %d polys (%d translucent), OpenGL %.2fms at %dx\n", n, ntr,
+                            now_ms() - tp0, g_scale);
+                return;
+            }
+            gl3d_compare(&gj);  /* after the CPU render below */
+        }
     }
     rj.L = L;
     rj.rc = &rc;
@@ -1541,6 +1558,8 @@ static void render_list(const plist_t *L, const u8 *io, u32 *out, int flatten)
     double tpd = now_ms();
     downsample(out);
     tp2 = now_ms();
+    if (gl3d_mode() == 2)
+        gl3d_compare(0);
     if (getenv("NDOGS_VLOG")) {
         unsigned fr = 0;
         for (i = 0; i < 64; i++)
@@ -1608,8 +1627,7 @@ int gx_take_swapped(const u8 *io, u32 *out)
 {
     if (r_swapped >= 0 && r_cur >= 0 && !g_rec[r_swapped].bad && !g_rec[r_cur].bad &&
         now_ms() - g_rec[r_cur].time < 50.0) {
-        vram_flatten(VRAM_TEX, tex_mem, sizeof tex_mem);
-        vram_flatten(VRAM_TEXPAL, texpal_mem, 0x18000);
+        flatten_tex();
         g_swap_pending = 0;
         rec_rotate();
         return 1;
