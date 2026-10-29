@@ -288,20 +288,25 @@ static void interp_keep(void)
     f->time = now_ms();
     f->seq = gx_list_seq();
     f->edges = 0;
-    if (fh_count >= 2) {  /* the game falling behind (a fifth of a second's frames late): first no interpolation
-                           * for a few seconds, then a lower resolution; ten seconds at full speed: one higher */
+    if (fh_count >= 2) {  /* the game falling behind (60 frames taking over 1.05 s: under ~57 fps; single slow
+                           * frames don't count, the schedule catches up after them): first no interpolation for a
+                           * few seconds, then a lower resolution; ten seconds at full speed: one higher */
         static int frames, slow, good;
         static unsigned presents0;
+        static double t0;
         extern void window_slow(void), window_fast(void);
-        slow += f->time - fr(1)->time > 20.0;
-        if (++frames == 60) {
+        if (!frames)
+            t0 = f->time;
+        if (++frames == 61) {
+            frames = 0;
+            slow = f->time - t0 > 60 * 1000.0 / 60 * 1.05 ? 13 : 0;
             int on = i_period && i_cost * 1.25 <= 1000.0 / 60 * 0.6;
-            if (on && i_presents - presents0 < 64)
+            if (on && i_presents - presents0 < 60)
                 i_cost = 40.0;  /* interpolating, but showing no more frames than the game makes: off for now */
             presents0 = i_presents;
             if (slow > 12) {
                 if (i_period && i_cost * 1.25 <= 1000.0 / 60 * 0.6)
-                    i_cost = 40.0;  /* interpolation off (decays: tried again in ~5 s) */
+                    i_cost = 40.0;  /* interpolation off (decays: tried again in ~13 s) */
                 else
                     window_slow();
                 good = 0;
@@ -309,7 +314,6 @@ static void interp_keep(void)
                 window_fast();
                 good = 0;
             }
-            frames = slow = 0;
         }
     }
     if ((gx_wide_px() > DS_W || gx_tall_px() > DS_H) && has3d(0))

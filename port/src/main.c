@@ -38,10 +38,60 @@ static void crash_open(void)
         crash_file = fopen(crash_path, "w");
 }
 
+#if defined(_WIN32) || !defined(__arm__)
+/* Division by zero (or 0x80000000 / -1) in x86 code at pc: the DS has no divide instruction, and its division
+ * routines (port/hostfuncs/func_0205e270.c etc.) give the dividend as quotient and 0 as remainder, so the
+ * decompiled C's plain '/' and '%' must too (e.g. func_020db628, the microphone levels, divides 0 by 0 in
+ * silence). The DIV/IDIV leaves the dividend in (E)AX: the remainder register is zeroed and the instruction
+ * skipped. Returns its length, 0 if it isn't one. */
+static int div_skip(const unsigned char *pc, int *width)
+{
+    const unsigned char *p = pc;
+    int op16 = 0, mod, rm, n;
+    while (*p == 0x66 || *p == 0x67 || *p == 0x26 || *p == 0x2e || *p == 0x36 || *p == 0x3e || *p == 0x64 ||
+           *p == 0x65 || *p == 0xf2 || *p == 0xf3) {
+        op16 |= *p == 0x66;
+        p++;
+    }
+    if ((p[0] != 0xf7 && p[0] != 0xf6) || ((p[1] >> 3) & 7) < 6)
+        return 0;
+    *width = p[0] == 0xf6 ? 8 : op16 ? 16 : 32;
+    mod = p[1] >> 6;
+    rm = p[1] & 7;
+    n = 2;
+    if (mod != 3 && rm == 4)
+        n += 1 + (mod == 0 && (p[2] & 7) == 5 ? 4 : 0);  /* SIB (no base: disp32) */
+    if (mod == 0 && rm == 5)
+        n += 4;
+    else if (mod == 1)
+        n += 1;
+    else if (mod == 2)
+        n += 4;
+    return (int)(p - pc) + n;
+}
+#endif
+
 #ifdef _WIN32
 static LONG WINAPI on_fault(EXCEPTION_POINTERS *e)
 {
     EXCEPTION_RECORD *r = e->ExceptionRecord;
+    if (r->ExceptionCode == EXCEPTION_INT_DIVIDE_BY_ZERO || r->ExceptionCode == EXCEPTION_INT_OVERFLOW) {
+        int width, n = div_skip((const unsigned char *)e->ContextRecord->Eip, &width);
+        if (n) {  /* the DS result (see div_skip) */
+            static int told;
+            if (!told++)
+                fprintf(stderr, "division by zero at eip=%08lx: given the DS result (quotient = dividend)\n",
+                        (unsigned long)e->ContextRecord->Eip);
+            if (width == 8)
+                e->ContextRecord->Eax &= 0xffff00ffu;  /* AH = 0 */
+            else if (width == 16)
+                e->ContextRecord->Edx &= 0xffff0000u;
+            else
+                e->ContextRecord->Edx = 0;
+            e->ContextRecord->Eip += (DWORD)n;
+            return EXCEPTION_CONTINUE_EXECUTION;
+        }
+    }
     crash_open();
     REPORT("\nfault 0x%08lx at eip=%p, address %p, during %s\n", r->ExceptionCode, r->ExceptionAddress,
             r->NumberParameters > 1 ? (void *)r->ExceptionInformation[1] : 0, stage);
@@ -85,6 +135,21 @@ static void on_fault(int sig, siginfo_t *si, void *ucv)
     unsigned int pc = uc->uc_mcontext.gregs[REG_EIP], *fp = (unsigned int *)uc->uc_mcontext.gregs[REG_EBP];
 #endif
     int i;
+#ifndef __arm__
+    if (sig == SIGFPE) {  /* division by zero: the DS result (see div_skip) */
+        int width, n = div_skip((const unsigned char *)pc, &width);
+        if (n) {
+            if (width == 8)
+                uc->uc_mcontext.gregs[REG_EAX] &= 0xffff00ff;
+            else if (width == 16)
+                uc->uc_mcontext.gregs[REG_EDX] &= 0xffff0000;
+            else
+                uc->uc_mcontext.gregs[REG_EDX] = 0;
+            uc->uc_mcontext.gregs[REG_EIP] += n;
+            return;
+        }
+    }
+#endif
     crash_open();
     REPORT("\nsignal %d at pc=0x%08x, address %p, during %s\n", sig, pc, si->si_addr, stage);
     for (i = 0; i < 24 && fp && (size_t)fp > 0x10000; i++) {  /* match return addresses against the .map */

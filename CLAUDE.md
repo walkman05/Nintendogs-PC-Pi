@@ -249,7 +249,7 @@ found no other case; variadic functions are safe (gcc pushes the unnamed registe
   (and overrun it; the game's schedule catches up); a late slot is shown late but the grid keeps its rate (reset
   only when two periods behind); the game's own frame presents only if nothing went out for 1.5 periods.
   Interpolation runs only while it pays: a frame in between must cost under 60% of a game frame, and each second
-  it must have shown at least 64 frames per 60 game frames; else it is off (the game's own 60 are shown) and
+  it must show at least as many frames as the game makes (60 per 60); else it is off (the game's own 60 are shown) and
   retried after ~13 s. Maximised on a 1920x1009 window here: 3x, 60 fps, not interpolated; at the default size
   72 fps (the monitor's rate). So
   72/120/144 targets are hit exactly (intro included); with the view 1.78 wide Home ~105, the intro ~60. If the
