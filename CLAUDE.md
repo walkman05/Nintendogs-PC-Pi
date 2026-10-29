@@ -242,8 +242,11 @@ found no other case; variadic functions are safe (gcc pushes the unnamed registe
   the game swaps the screens every frame and shows each one's 3D on the other through display capture): video.c
   keeps the last four frames (registers, OAM, the list each showed; gpu3d keeps four lists) and renders each
   screen itself, as engine A from its own two frames (0 and 2, 1 and 3), two frames late. The mode is sticky (on
-  after three swaps in a row, off after two frames without), so a hiccup doesn't change the screens' size; the
-  VBlank raster is skipped then too (the captures aren't used: compose_now draws both screens). While interpolating one
+  after three swaps in a row, off after two frames without), so a hiccup doesn't change the screens' size. The
+  VBlank raster is never skipped while a display capture is on: a capture can be shown long after (at the end of
+  the intro the top screen keeps the last one: the door's upper half). Whole-screen captures taken while the view
+  is widened keep a widened copy per VRAM bank (wcap); a screen showing that bitmap (gpu2d_src at five points) is
+  shown widened from it (widen_cap). While interpolating one
   screen, the swapped list isn't rasterised at VBlank (gx_take_swapped) unless display capture needs it. Measured
   at Home, 2x: 120 fps presented, game 60, ~3 ms per frame in between. Grid: a frame may start up to the VBlank
   (and overrun it; the game's schedule catches up); a late slot is shown late but the grid keeps its rate (reset

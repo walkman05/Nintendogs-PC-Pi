@@ -104,11 +104,13 @@ static u16 rgb15(u32 c)
 /* Display capture (DISPCAPCNT 0x04000064): engine A's picture (before master brightness) or the 3D layer,
  * optionally blended with a VRAM bitmap, written into VRAM bank A-D as 15-bit pixels with bit 15 set. Games
  * with 3D on both screens swap the screens every frame and show the captured previous frame on the other one. */
+static int cap_bank = -1;  /* this frame's display capture: the bank it filled, if a whole plain screen (see wcap) */
 static void display_capture(const u32 *graphics)
 {
     u32 cap = *(u32 *)(io + 0x64), dc = *(u32 *)(io + 0);
     static const int widths[4] = { 128, 256, 256, 256 }, heights[4] = { 128, 64, 128, 192 };
     int w = widths[(cap >> 20) & 3], h = heights[(cap >> 20) & 3], src = (cap >> 29) & 3;
+    cap_bank = w == DS_W && h == DS_H && src == 0 ? (int)((cap >> 16) & 3) : -1;
     int eva = cap & 31, evb = (cap >> 8) & 31, x, y;
     u16 *dst = vram_bank_ptr((cap >> 16) & 3), *vsrc = vram_bank_ptr((dc >> 18) & 3);
     u32 dofs = ((cap >> 18) & 3) * 0x4000u, sofs = ((cap >> 26) & 3) * 0x4000u;  /* in halfwords */
@@ -501,6 +503,53 @@ static const u32 *widen(const u32 *scr, int S, u32 *out, int *w, int *h, const F
     return out;
 }
 
+/* Widened captures: when the game captures a whole screen while the view is widened, the widened screen is kept
+ * per VRAM bank, so that a screen later showing that capture (the top of the door after the intro: a still of the
+ * intro's last frame) is shown widened too. */
+typedef struct { int valid, S, W, H; u32 img[DS_W * DS_H * WMAX * MAXS * MAXS]; } WideCap;
+static WideCap *wcap[4];
+
+static void wcap_keep(int bank, const u32 *wide, int S, int W, int H)
+{
+    if (!wcap[bank] && !(wcap[bank] = malloc(sizeof *wcap[bank])))
+        return;
+    memcpy(wcap[bank]->img, wide, (size_t)W * H * 4);
+    wcap[bank]->S = S, wcap[bank]->W = W, wcap[bank]->H = H;
+    wcap[bank]->valid = 1;
+}
+
+/* engine B's screen scr, if it is showing a whole widened capture: the capture's widened sides around it (into out,
+ * size in *w x *h); else scr itself */
+static const u32 *widen_cap(const u32 *scr, int S, u32 *out, int *w, int *h)
+{
+    static const int pts[5][2] = { { 128, 96 }, { 16, 16 }, { 239, 16 }, { 16, 175 }, { 239, 175 } };
+    int k, bank = -1, W, H, sw = DS_W * S, ox, oy, y;
+    const WideCap *c;
+    *w = sw;
+    *h = DS_H * S;
+    for (k = 0; k < 5; k++) {  /* all over the screen, pixels of one bank's bitmap */
+        u32 sv = gpu2d_src[1][pts[k][1] * DS_W + pts[k][0]], boff;
+        int b;
+        if (!(sv & GPU2D_SRC_VRAM))
+            return scr;
+        b = vram_bank_at((int)((sv >> 24) & 0x7f), sv & 0xffffff, &boff);
+        if (b < 0 || b > 3 || (bank >= 0 && b != bank))
+            return scr;
+        bank = b;
+    }
+    c = wcap[bank];
+    if (!c || !c->valid || c->S != S)
+        return scr;
+    W = c->W, H = c->H;
+    ox = (W - sw) / 2, oy = (H - DS_H * S) / 2;
+    memcpy(out, c->img, (size_t)W * H * 4);
+    for (y = 0; y < DS_H * S; y++)  /* the screen as it is now in the middle */
+        memcpy(out + (oy + y) * W + ox, scr + y * sw, (size_t)sw * 4);
+    *w = W;
+    *h = H;
+    return out;
+}
+
 /* Engine A's screen at t between frames fa and fb (its 2D, and the 3D lists they showed: ages relative to the newest
  * list), widened, into buffers k; *w x *h its size. 0 if the 3D can't be interpolated. */
 static const u32 *screen_a_at(const Frame *fa, const Frame *fb, float t, int S, int k, int *w, int *h)
@@ -558,7 +607,7 @@ static int compose_now(double now, int latest, const u32 **top, int *tw, int *th
         double span = fb->time - fa->time;
         float t = (float)((now - fb->time) / span);
         const u32 *f3d = frame3d, *a, *b;
-        int w, h, b_same;
+        int w, h, wb, hb, b_same;
         if (span > 0 && span <= 50.0) {
             t = t < 0 ? 0 : t > 1 ? 1 : t;
             if (gx_interp_pos(now) >= 0 && gx_render_pair(fb->io3d, 0, 1, t, i3d))  /* 3D at the 2D's position */
@@ -577,6 +626,7 @@ static int compose_now(double now, int latest, const u32 **top, int *tw, int *th
             render_a(f3d, scr_i[0], hi_i[0], S, 0);
             a = S > 1 ? hi_i[0] : scr_i[0];
             b = b_same ? (S > 1 ? hi_b : screen_b) : S > 1 ? hi_ib : i_b;
+            b = widen_cap(b, S, wide_buf[1], &wb, &hb);
             if (has3d(0))
                 a = widen(a, S, wide_buf[0], &w, &h, fb);
             else
@@ -584,9 +634,9 @@ static int compose_now(double now, int latest, const u32 **top, int *tw, int *th
             gpu2d_oam = 0;
             memcpy(io, io_save, sizeof io);
             if (fpow(0) & 0x8000)
-                *top = a, *tw = w, *th = h, *bottom = b;
+                *top = a, *tw = w, *th = h, *bottom = b, *bw = wb, *bh = hb;
             else
-                *top = b, *bottom = a, *bw = w, *bh = h;
+                *top = b, *tw = wb, *th = hb, *bottom = a, *bw = w, *bh = h;
             return 1;
         }
     }
@@ -597,12 +647,15 @@ static int compose_now(double now, int latest, const u32 **top, int *tw, int *th
             raster_skipped = 0;
         }
     }
-    if (wide && has3d(0) && !dual()) {  /* the real frame, the 3D screen widened */
+    if (wide && has3d(0) && !dual()) {  /* the real frame, the 3D screen widened (and a widened capture shown) */
         const u32 *a = S > 1 ? hi_a : screen_a;
-        if (*top == a)
+        if (*top == a) {
             *top = widen(a, S, wide_buf[0], tw, th, fr(0));
-        else
+            *bottom = widen_cap(*bottom, S, wide_buf[1], bw, bh);
+        } else {
             *bottom = widen(a, S, wide_buf[0], bw, bh, fr(0));
+            *top = widen_cap(*top, S, wide_buf[1], tw, th);
+        }
         return 1;
     }
     return 0;
@@ -682,11 +735,10 @@ void video_vblank(void)
                 window_view(dual(), &wf, &hf);
             gx_set_view(wf, fh_count && dual() ? 1.0f : hf);  /* both screens: only wider (see window_view) */
         }
-        /* skip the raster when every frame shown is drawn from the recorded lists anyway: interpolating one screen
-         * (unless a display capture needs this frame), or 3D on both screens drawn here (compose_now: the captures
-         * aren't used) */
-        if ((interp_active() && steady() && !dual() && !(*(u32 *)(io + 0x64) & 0x80000000u)) ||
-            (dual() && (i_period || gx_wide_px() > DS_W || gx_tall_px() > DS_H)))
+        /* skip the raster when every frame shown is drawn from the recorded lists anyway: interpolating one screen,
+         * unless a display capture is on (what it captures may be shown for a long time after: at the end of the
+         * intro the top screen keeps its last capture) */
+        if (interp_active() && steady() && !dual() && !(*(u32 *)(io + 0x64) & 0x80000000u))
             raster_skipped = gx_take_swapped(io, frame3d);
         else {
             gx_render_swapped(io, frame3d);
@@ -754,7 +806,17 @@ void video_frame(void)
     gpu2d_render(1, io, 0, screen_b);
     if (S > 1)
         compose(1, screen_b, hi_b, S, 1);
+    cap_bank = -1;
     render_a(frame3d, screen_a, hi_a, S, 1);
+    if (cap_bank >= 0) {  /* a whole screen captured: keep it widened, if the view is (see wcap) */
+        if ((gx_wide_px() > DS_W || gx_tall_px() > DS_H) && gx_scale() == S && !raster_skipped) {
+            int W, H;
+            const u32 *wd = widen(S > 1 ? hi_a : screen_a, S, wide_buf[1], &W, &H, fr(0));
+            if (wd != (S > 1 ? hi_a : screen_a))
+                wcap_keep(cap_bank, wd, S, W, H);
+        } else if (wcap[cap_bank])
+            wcap[cap_bank]->valid = 0;
+    }
     powcnt = *(u32 *)(io + 0x304);
     frame++;
     if (getenv("NDOGS_VLOG"))
