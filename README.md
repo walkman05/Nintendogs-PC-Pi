@@ -8,6 +8,10 @@ A matching decompilation of the C code of **Nintendogs** (Nintendo DS, 2005), ma
 
 The ROM is not included: bring your own.
 
+## Credits
+
+- **cheemz**: the original decompilation, which got this project to about 99%.
+
 ## Status
 
 - **8,310 of 8,311 functions** compile to exactly the original instructions, in the main ARM9 program and the
