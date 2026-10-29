@@ -198,15 +198,25 @@ found no other case; variadic functions are safe (gcc pushes the unnamed registe
   dlopen on Linux; +6 dB output gain (`NDOGS_VOLUME=<percent>`), `NDOGS_WAV=<file>` records, `NDOGS_MUTE=1`.
 - `port/src/window.c`: resizable window (aspect kept, F11 full screen on Windows), XInput gamepads, X11 window on
   Linux via dlopen (not yet run on Linux). `NDOGS_SNDLOG=1` logs sound commands.
-- Internal resolution (`NDOGS_SCALE=1-4`, default 2, F8 cycles): gpu3d rasterises at 256S x 192S in parallel
+- Internal resolution (`NDOGS_SCALE=1-4`, default auto, F8 cycles auto/1-4: the smallest whole multiple of the
+  DS screen that covers its size in the window, up to 4x, 2x on ARM, so the presenter only scales down a little:
+  sharp, not blurry): gpu3d rasterises at 256S x 192S in parallel
   scanline bands (`port/src/workers.c`, `NDOGS_THREADS`), plus a downsampled native frame for the 2D engines.
   gpu2d records each pixel's source (`gpu2d_src`: unchanged 3D, or a 1:1 direct-colour bitmap pixel with its VRAM
   address); video.c composes the screens at S x by taking those pixels from the hi-res 3D frame or from a hi-res
   copy of the display capture that wrote that VRAM (so the second screen's 3D is sharp too). Everything else is
   the native pixel enlarged. 2x costs ~2 ms per frame, 3x ~6 ms (at the limit on an 8-thread CPU).
-- Window: F9 stacked / side by side / auto (`NDOGS_LAYOUT=0/1/2`, default auto: whichever shows the screens bigger
-  in the window's shape, re-chosen as it is resized), F10 keep aspect / stretch / whole multiples
+- Window: F9 stacked / side by side / auto (`NDOGS_LAYOUT=0/1/2`, default auto: whichever fills more of the window,
+  counting the view below, re-chosen as it is resized), F10 keep aspect / stretch / whole multiples
   (`NDOGS_ASPECT`), F11 full screen, F7 bilinear / nearest scaling.
+- Dynamic view (keeping the aspect; `NDOGS_WIDE=0` off, `=<w>[,<h>]` fixed): the screen with the 3D is shown wider
+  or taller to fill the window (window_view: stacked in a wide window: wider; side by side in a 16:9 one: taller),
+  up to 2x. gpu3d (gx_set_view) renders full-screen viewports into a bigger buffer with the DS screen in the
+  middle: x (y) is divided by the factor before clipping and the box test (so the game keeps drawing what is now
+  visible), and the viewport maps the wider range; small viewports are unchanged. The 2D engines, display capture
+  and downsample use the middle; video.c's widen() puts the extra 3D (or the backdrop) around the composed screen.
+  The touch screen keeps its 256x192 mapping. The screen with the 3D can be either one; with 3D on both screens
+  both widen (never taller: the game's two views are halves of one, taller ones would overlap).
 - High frame rate (video.c, gpu3d.c): the game logic stays at 60 (it counts frames); frames in between are
   presented on a steady grid while the game waits for VBlank (hw_halt), interpolated between the last two game
   frames, so everything is shown one game frame late. 3D: each list is also recorded before clipping (object-space
@@ -218,10 +228,14 @@ found no other case; variadic functions are safe (gcc pushes the unnamed registe
   both frames; sprites matched by identity (tile, palette, shape, size; nearest previous one, any slot: the game
   reuses slots) move and turn, BG scroll and rotation, blend/fade levels and master brightness interpolate;
   anything that jumped over 64 px snaps. Rate `NDOGS_FPS`, default 120 or the monitor's refresh rate if lower
-  (Windows; Linux: only with NDOGS_FPS), adapting down to what the machine manages; off while the game swaps its
-  screens every frame (3D on both screens). While interpolating, the swapped list isn't rasterised at VBlank
-  (gx_take_swapped) unless display capture needs it. Measured at Home, 2x: 120 fps presented, game 60, ~3 ms per
-  frame in between. `NDOGS_SHOT` also saves the halfway frame (shot_1<frame>); `NDOGS_ILOG=1` per-frame costs.
+  (Windows; Linux: only with NDOGS_FPS), adapting down to what the machine manages. 3D on both screens (the intro:
+  the game swaps the screens every frame and shows each one's 3D on the other through display capture): video.c
+  keeps the last four frames (registers, OAM, the list each showed; gpu3d keeps four lists) and renders each
+  screen itself, as engine A from its own two frames (0 and 2, 1 and 3), two frames late. While interpolating one
+  screen, the swapped list isn't rasterised at VBlank (gx_take_swapped) unless display capture needs it. Measured
+  at Home, 2x: 120 fps presented, game 60, ~3 ms per frame in between; the intro (two renders per frame) ~60 here.
+  `NDOGS_SHOT` also saves what is shown (shot_2<frame>) and the halfway frame (shot_1<frame>); `NDOGS_ILOG=1`
+  per-frame costs.
 - The renderers (gpu2d/gpu3d/video/window.c) build with SSE2 floating point on 32-bit x86 (x87 float-to-int
   conversions made the rasteriser ~4x slower); only polygon-edge pixels round differently (<0.15% of a frame).
 - Faults also write their report to crash.txt next to the exe (double-clicked games have no console).

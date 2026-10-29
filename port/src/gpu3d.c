@@ -59,6 +59,8 @@ static s32 g_light[4][3];          /* transformed light vectors, .12 */
 static int g_light_col[4][3];      /* 5 bit */
 static int g_vp_x1, g_vp_y1, g_vp_w, g_vp_h;
 static int g_prim, g_in_begin;
+static int g_wpx = DS_W, g_xoff, g_hpx = DS_H, g_yoff;  /* a wider or taller view (see gx_set_view) */
+static float g_wide = 1.0f, g_tall = 1.0f;
 static vtx_t g_vbuf[4];
 static int g_nv, g_strip_odd;
 
@@ -83,8 +85,17 @@ typedef struct {
     rbat_t b[REC_B];
     rmtx_t m[REC_M];
 } rec_t;
-static rec_t g_rec[4];
-static int r_fill, r_swapped = -1, r_cur = -1, r_prev = -1;  /* being filled, swapped (not shown yet), shown, before */
+#define NREC 6
+static rec_t g_rec[NREC];
+/* being filled, swapped (not shown yet), and the last four shown, [0] newest (scenes with 3D on both screens
+ * alternate: a screen's two lists are [0] and [2], or [1] and [3]) */
+static int r_fill, r_swapped = -1, r_hist[4] = { -1, -1, -1, -1 };
+static unsigned r_seq;  /* lists shown so far (gx_list_seq) */
+#define r_cur r_hist[0]
+#define r_prev r_hist[1]
+typedef struct { int c, p; short m[REC_B]; } match_t;  /* a newer list's batches -> matching older ones, or -1 */
+static match_t g_match[4];
+static int g_match_next;
 static int g_rec_mnew = 1;                                   /* the clip matrix changed since the last recorded one */
 static plist_t *g_emit;                                      /* replay target (0: the list being filled) */
 
@@ -341,9 +352,13 @@ static void emit_poly(const vtx_t *src, int n)
     int i, need_clip = 0, far = 0, fmt;
     float area = 0, ymin = 1e9f, ymax = -1e9f;
     u32 attr = g_attr;
+    /* a wider (taller) view: x / g_wide (y / g_tall) is clipped against the normal planes, i.e. x against
+     * +-g_wide*w; full-screen viewports only */
+    int full = g_vp_x1 == 0 && g_vp_y1 == 0 && g_vp_w == 256 && g_vp_h == 192;
+    float kx = full ? 1.0f / g_wide : 1.0f, ky = full ? 1.0f / g_tall : 1.0f;
 
     for (i = 0; i < n; i++) {
-        float x = src[i].f[VX], y = src[i].f[VY], z = src[i].f[VZ], w = src[i].f[VW];
+        float x = src[i].f[VX] * kx, y = src[i].f[VY] * ky, z = src[i].f[VZ], w = src[i].f[VW];
         if (z > w) far = 1;
         if (x > w || x < -w || y > w || y < -w || z > w || z < -w)
             need_clip = 1;
@@ -353,6 +368,11 @@ static void emit_poly(const vtx_t *src, int n)
         return;
     }
     memcpy(in, src, sizeof(vtx_t) * n);
+    if (kx != 1.0f || ky != 1.0f)
+        for (i = 0; i < n; i++) {
+            in[i].f[VX] *= kx;
+            in[i].f[VY] *= ky;
+        }
     if (need_clip) {
         static const int axes[3] = { VX, VY, VZ };
         int a;
@@ -388,8 +408,8 @@ static void emit_poly(const vtx_t *src, int n)
         }
         iw = 1.0f / w;
         *v = in[i];
-        v->f[VX] = (float)g_vp_x1 + (in[i].f[VX] * iw + 1.0f) * 0.5f * (float)g_vp_w;
-        v->f[VY] = 192.0f - ((float)g_vp_y1 + (in[i].f[VY] * iw + 1.0f) * 0.5f * (float)g_vp_h);
+        v->f[VX] = (float)(g_xoff + g_vp_x1) + (in[i].f[VX] * iw / kx + 1.0f) * 0.5f * (float)g_vp_w;
+        v->f[VY] = (float)(g_yoff + 192) - ((float)g_vp_y1 + (in[i].f[VY] * iw / ky + 1.0f) * 0.5f * (float)g_vp_h);
         z = (in[i].f[VZ] * iw * 16384.0f + 16383.0f) * 512.0f;
         if (z < 0) z = 0;
         if (z > 16777215.0f) z = 16777215.0f;
@@ -553,6 +573,10 @@ static void box_test(const u32 *p)
     for (i = 0; i < 8; i++) {
         s32 c[4];
         xform4(m_clip, x + ((i & 1) ? w : 0), y + ((i & 2) ? h : 0), z + ((i & 4) ? d : 0), c);
+        if ((g_wide != 1.0f || g_tall != 1.0f) && g_vp_x1 == 0 && g_vp_y1 == 0 && g_vp_w == 256 && g_vp_h == 192) {
+            c[0] = (s32)((float)c[0] / g_wide);  /* a wider or taller view */
+            c[1] = (s32)((float)c[1] / g_tall);
+        }
         for (k = 0; k < 3; k++) {
             if (c[k] <= c[3]) out_all[k * 2] = 0;
             if (c[k] >= -c[3]) out_all[k * 2 + 1] = 0;
@@ -614,9 +638,16 @@ static void do_swap(u32 p)
     /* the recording goes with the list: swapped now, shown at VBlank (gx_render_swapped); start a free one */
     g_rec[r_fill].swapflags = p & 3;
     r_swapped = r_fill;
-    for (r_fill = 0; r_fill == r_swapped || r_fill == r_cur || r_fill == r_prev; r_fill++)
+    for (r_fill = 0; r_fill == r_swapped || r_fill == r_hist[0] || r_fill == r_hist[1] || r_fill == r_hist[2] ||
+                     r_fill == r_hist[3]; r_fill++)
         ;
     g_rec[r_fill].nv = g_rec[r_fill].nb = g_rec[r_fill].nm = g_rec[r_fill].bad = 0;
+    {   /* forget matches involving the reused recording */
+        int k;
+        for (k = 0; k < 4; k++)
+            if (g_match[k].c == r_fill || g_match[k].p == r_fill)
+                g_match[k].c = g_match[k].p = -1;
+    }
     g_rec_mnew = 1;
 }
 
@@ -873,6 +904,7 @@ u32 gx_read_result(u32 addr)
 
 void gx_init(void)
 {
+    int i;
     memcpy(m_proj, k_ident, 64);
     memcpy(m_pos, k_ident, 64);
     memcpy(m_vec, k_ident, 64);
@@ -901,7 +933,9 @@ void gx_init(void)
     g_swap_pending = 0;
     g_vtx_count = 0;
     r_fill = 0;
-    r_swapped = r_cur = r_prev = -1;
+    r_swapped = r_hist[0] = r_hist[1] = r_hist[2] = r_hist[3] = -1;
+    for (i = 0; i < 4; i++)
+        g_match[i].c = g_match[i].p = -1;
     g_rec[0].nv = g_rec[0].nb = g_rec[0].nm = g_rec[0].bad = 0;
     g_rec_mnew = 1;
 }
@@ -910,8 +944,14 @@ void gx_init(void)
 /* Internal resolution: the scene is rasterised at g_scale times the DS's 256x192 (1-4, gx_set_scale); RW x RH pixels.
  * Rasterising is split into horizontal bands run in parallel (port/src/workers.c). */
 #define MAXS 4
-#define NPIX (DS_W * DS_H * MAXS * MAXS)
+#define WMAX 2 /* widest widescreen view: twice the DS screen's width */
+#define NPIX (DS_W * WMAX * DS_H * MAXS * MAXS)
 static int g_scale = 1, RW = DS_W, RH = DS_H;
+/* Widescreen (gx_set_wide): full-screen 3D views are rendered wider than the DS screen, g_wpx DS pixels with the
+ * screen's 256 in the middle (g_xoff): the horizontal field of view grows (clipping and the box test use the wider
+ * range), so the top screen fills a wider window instead of leaving bars. Smaller viewports (the game renders e.g.
+ * portraits into part of the screen) are unchanged. The 2D engines and display capture see the middle 256. */
+
 static u32 rb_color[NPIX];   /* r | g<<8 | b<<16 (6 bit each) | alpha(5 bit)<<24 */
 static u32 rb_depth[NPIX];
 static u8 rb_opid[NPIX];     /* opaque polygon ID */
@@ -1391,14 +1431,15 @@ static void downsample(u32 *out)
 {
     int x, y, sx, sy, n2 = g_scale * g_scale;
     if (g_scale == 1) {
-        memcpy(out, g_hires, DS_W * DS_H * 4);
+        for (y = 0; y < DS_H; y++)
+            memcpy(out + y * DS_W, g_hires + (y + g_yoff) * RW + g_xoff, DS_W * 4);
         return;
     }
     for (y = 0; y < DS_H; y++)
         for (x = 0; x < DS_W; x++) {
             u32 r = 0, g = 0, b = 0, cnt = 0;
             for (sy = 0; sy < g_scale; sy++) {
-                const u32 *p = g_hires + (y * g_scale + sy) * RW + x * g_scale;
+                const u32 *p = g_hires + ((y + g_yoff) * g_scale + sy) * RW + (x + g_xoff) * g_scale;
                 for (sx = 0; sx < g_scale; sx++)
                     if (p[sx] >> 31) {
                         r += (p[sx] >> 16) & 255; g += (p[sx] >> 8) & 255; b += p[sx] & 255;
@@ -1412,11 +1453,34 @@ static void downsample(u32 *out)
 void gx_set_scale(int sc)
 {
     g_scale = sc < 1 ? 1 : sc > MAXS ? MAXS : sc;
-    RW = DS_W * g_scale;
-    RH = DS_H * g_scale;
+    RW = g_wpx * g_scale;
+    RH = g_hpx * g_scale;
 }
 int gx_scale(void) { return g_scale; }
-const u32 *gx_hires(void) { return g_hires; }
+const u32 *gx_hires(void) { return g_hires + (g_yoff * RW + g_xoff) * g_scale; }  /* the DS screen's part */
+int gx_stride(void) { return RW; }
+int gx_wide_px(void) { return g_wpx; }
+int gx_tall_px(void) { return g_hpx; }
+const u32 *gx_hires_wide(void) { return g_hires; }
+
+/* the 3D view's width and height over the DS screen's (each 1 to 2, their product at most 2: the buffers); takes
+ * effect at the next render */
+void gx_set_view(float wf, float hf)
+{
+    int w = (int)(DS_W * wf / 2 + 0.5f) * 2, h = (int)(DS_H * hf / 2 + 0.5f) * 2;
+    w = w < DS_W ? DS_W : w > DS_W * WMAX ? DS_W * WMAX : w;
+    h = h < DS_H ? DS_H : h > DS_H * WMAX ? DS_H * WMAX : h;
+    if (w * h > DS_W * DS_H * WMAX)
+        h = DS_W * DS_H * WMAX / w / 2 * 2;
+    g_wpx = w;
+    g_xoff = (w - DS_W) / 2;
+    g_wide = (float)w / DS_W;
+    g_hpx = h;
+    g_yoff = (h - DS_H) / 2;
+    g_tall = (float)h / DS_H;
+    RW = g_wpx * g_scale;
+    RH = g_hpx * g_scale;
+}
 
 static void render_list(const plist_t *L, const u8 *io, u32 *out, int flatten)
 {
@@ -1486,40 +1550,49 @@ static void render_list(const plist_t *L, const u8 *io, u32 *out, int flatten)
     }
 }
 
-static int r_match[REC_B];  /* r_cur batch -> matching r_prev batch, or -1 */
-
-/* pair the batches of the shown list with the previous one's: same primitive type, vertex count and texture,
- * in order (a batch may be missing or added: searched a little ahead) */
-static void match_batches(void)
+/* pair the batches of recording c with recording p's: same primitive type, vertex count and texture, in order (a
+ * batch may be missing or added: searched a little ahead); cached */
+static const short *pair_match(int c, int p)
 {
-    const rec_t *C = &g_rec[r_cur], *P = &g_rec[r_prev];
+    const rec_t *C = &g_rec[c], *P = &g_rec[p];
+    match_t *M;
     int i, j = 0, k;
+    for (k = 0; k < 4; k++)
+        if (g_match[k].c == c && g_match[k].p == p)
+            return g_match[k].m;
+    M = &g_match[g_match_next++ & 3];
+    M->c = c;
+    M->p = p;
     for (i = 0; i < C->nb; i++) {
         const rbat_t *b = &C->b[i];
-        r_match[i] = -1;
+        M->m[i] = -1;
         for (k = j; k < P->nb && k < j + 32; k++) {
             const rbat_t *a = &P->b[k];
             if (a->prim == b->prim && a->n == b->n &&
                 (!b->n || P->v[a->first].tex == C->v[b->first].tex)) {
-                r_match[i] = k;
+                M->m[i] = (short)k;
                 j = k + 1;
                 break;
             }
         }
     }
+    return M->m;
 }
 
 static void rec_rotate(void)
 {
     if (r_swapped < 0)
         return;
-    r_prev = r_cur;
-    r_cur = r_swapped;
+    r_hist[3] = r_hist[2];
+    r_hist[2] = r_hist[1];
+    r_hist[1] = r_hist[0];
+    r_hist[0] = r_swapped;
     r_swapped = -1;
     g_rec[r_cur].time = now_ms();
-    if (r_prev >= 0 && !g_rec[r_cur].bad && !g_rec[r_prev].bad)
-        match_batches();
+    r_seq++;
 }
+
+unsigned gx_list_seq(void) { return r_seq; }
 
 void gx_render_swapped(const u8 *io, u32 *out)
 {
@@ -1661,9 +1734,9 @@ float gx_interp_pos(double now)
     return now < 0 ? 0.0f : now > 1 ? 1.0f : (float)now;
 }
 
-/* Render the shown list's 3D frame as it would be at <t> (gx_interp_pos) into out and gx_hires(). 0 (nothing
- * rendered) if there is no pair. */
-int gx_render_interp(const u8 *io, float t, u32 *out)
+/* Render the 3D frame between two shown lists (ages: 0 the newest, up to 3) at t (0 the older, 1 the newer) into out
+ * and gx_hires(). 0 (nothing rendered) if they aren't both there and recorded. */
+int gx_render_pair(const u8 *io, int newer, int older, float t, u32 *out)
 {
     static plist_t L;
     static float cm[REC_M][16];
@@ -1675,10 +1748,13 @@ int gx_render_interp(const u8 *io, float t, u32 *out)
     u32 tex_save = g_teximage, pal_save = g_pltt;
     vtx_t vbuf_save[4];
     double t0 = now_ms(), tr;
-    if (t < 0 || r_cur < 0 || r_prev < 0)
+    const short *match;
+    if (t < 0 || newer < 0 || newer > 3 || older < 0 || older > 3 || r_hist[newer] < 0 || r_hist[older] < 0 ||
+        g_rec[r_hist[newer]].bad || g_rec[r_hist[older]].bad)
         return 0;
-    C = &g_rec[r_cur];
-    P = &g_rec[r_prev];
+    C = &g_rec[r_hist[newer]];
+    P = &g_rec[r_hist[older]];
+    match = pair_match(r_hist[newer], r_hist[older]);
     memcpy(vbuf_save, g_vbuf, sizeof vbuf_save);
     for (i = 0; i < C->nm; i++)
         cm_prev[i] = -2;  /* clip matrix for C's matrix i not computed yet */
@@ -1687,7 +1763,7 @@ int gx_render_interp(const u8 *io, float t, u32 *out)
     g_emit = &L;
     for (k = 0; k < C->nb; k++) {
         const rbat_t *b = &C->b[k];
-        const rbat_t *a = r_match[k] >= 0 ? &P->b[r_match[k]] : 0;
+        const rbat_t *a = match[k] >= 0 ? &P->b[match[k]] : 0;
         g_attr = b->attr;
         g_prim = b->prim;
         g_vp_x1 = b->vp[0]; g_vp_y1 = b->vp[1]; g_vp_w = b->vp[2]; g_vp_h = b->vp[3];
@@ -1735,9 +1811,15 @@ int gx_render_interp(const u8 *io, float t, u32 *out)
     if (getenv("NDOGS_ILOG")) {
         int matched = 0;
         for (k = 0; k < C->nb; k++)
-            matched += r_match[k] >= 0;
+            matched += match[k] >= 0;
         fprintf(stderr, "interp: replay %.2fms raster %.2fms, %d polys, %d/%d batches matched, %d matrices\n",
                 tr - t0, now_ms() - tr, L.npoly, matched, C->nb, C->nm);
     }
     return 1;
+}
+
+/* the shown list interpolated from the previous one (one screen with 3D) */
+int gx_render_interp(const u8 *io, float t, u32 *out)
+{
+    return gx_render_pair(io, 0, 1, t, out);
 }

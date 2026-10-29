@@ -69,10 +69,17 @@ void gx_render_swapped(const u8 *io, u32 *out);
 float gx_interp_pos(double now);                      /* frame interpolation (gpu3d.c): position at a time, -1 none */
 int gx_render_interp(const u8 *io, float t, u32 *out); /* the shown list interpolated from the previous one */
 int gx_take_swapped(const u8 *io, u32 *out);           /* gx_render_swapped, skipping the raster if interpolated */
+int gx_render_pair(const u8 *io, int newer, int older, float t, u32 *out);  /* between two of the last 4 lists */
+unsigned gx_list_seq(void);                            /* lists shown so far */
 int gx_swap_pending(void);
 void gx_set_scale(int s);      /* internal 3D resolution: 1-4 times 256x192 */
 int gx_scale(void);
-const u32 *gx_hires(void);     /* the last rendered 3D frame at (256*s) x (192*s), 0x80RRGGBB */
+const u32 *gx_hires(void);     /* the last rendered 3D frame at (256*s) x (192*s), 0x80RRGGBB; rows gx_stride() apart */
+int gx_stride(void);           /* pixels per row of the 3D frame (wider than 256*s in widescreen) */
+int gx_wide_px(void);          /* widescreen: the 3D view's width in DS pixels (256 if not wide) */
+const u32 *gx_hires_wide(void); /* the whole widescreen 3D frame (gx_wide_px()*s x 192*s) */
+void gx_set_view(float wf, float hf); /* wider/taller 3D view (1-2 each) for the next renders (full screen only) */
+int gx_tall_px(void);          /* the 3D view's height in DS pixels (192 if not taller) */
 void workers_init(void);       /* host worker threads (port/src/workers.c) */
 void workers_run(int n, void (*fn)(int job, void *arg), void *arg);
 int workers_count(void);   /* nonzero after SWAP_BUFFERS until the next gx_render_swapped */
@@ -82,7 +89,10 @@ void gx_init(void);
 /* ---- window (port/src/window.c) ---------------------------------------------------------------------------------- */
 int window_open(int scale);
 /* top and bottom screen, 256x192 each, 0x00RRGGBB; returns 0 when the user closed the window */
-int window_present(const u32 *top, const u32 *bottom, int w, int h);  /* each screen w x h */
+/* both screens: the top one tw x th, the bottom one bw x bh (w x h: a DS screen at this scale; the screen with the
+ * 3D can be wider or taller, see window_view) */
+int window_present(const u32 *top, int tw, int th, const u32 *bottom, int bw, int bh, int w, int h);
+void window_view(int both, float *wf, float *hf);  /* the 3D screen's view to fill the window; both: 3D on both */
 int window_scale(void);  /* internal resolution chosen by the user (NDOGS_SCALE, F8 cycles 1-4) */
 /* mouse on the bottom screen: returns 1 while the left button is down inside it, with DS coordinates */
 int window_touch(int *x, int *y);

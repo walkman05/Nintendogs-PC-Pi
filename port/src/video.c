@@ -24,27 +24,31 @@ typedef struct {
 static HiCapture hicap[4];  /* banks A-D */
 
 /* NDOGS_SHOT=<frame>[,<frame>...]: save both screens (top above bottom) to shot_<frame>.bmp in the current folder */
-static void save_bmp(int frame, const u32 *top, const u32 *bottom, int w, int h)
+static void save_bmp(int frame, const u32 *top, int tw, int th, const u32 *bottom, int bw, int bh)
 {
     char name[64];
     FILE *f;
-    u32 hdr[13];
-    int y;
+    u32 hdr[13], black[DS_W * 2 * 4] = { 0 };
+    int y, w = tw > bw ? tw : bw, h = th + bh;  /* each screen centred (the 3D one may be wider) */
     snprintf(name, sizeof name, "shot_%d.bmp", frame);
     f = fopen(name, "wb");
     if (!f)
         return;
     memset(hdr, 0, sizeof hdr);
     fwrite("BM", 1, 2, f);
-    hdr[0] = 54 + (u32)w * h * 2 * 4;
+    hdr[0] = 54 + (u32)w * h * 4;
     hdr[2] = 54;
     hdr[3] = 40;
     hdr[4] = (u32)w;
-    hdr[5] = (u32)h * 2;
+    hdr[5] = (u32)h;
     hdr[6] = 1 | (32 << 16);
     fwrite(hdr, 4, 13, f);
-    for (y = h * 2 - 1; y >= 0; y--)
-        fwrite(y < h ? top + y * w : bottom + (y - h) * w, 4, (size_t)w, f);
+    for (y = h - 1; y >= 0; y--) {
+        int sw = y < th ? tw : bw, pad = (w - sw) / 2;
+        fwrite(black, 4, (size_t)pad, f);
+        fwrite(y < th ? top + y * tw : bottom + (y - th) * bw, 4, (size_t)sw, f);
+        fwrite(black, 4, (size_t)(w - sw - pad), f);
+    }
     fclose(f);
 }
 
@@ -53,7 +57,7 @@ static void save_bmp(int frame, const u32 *top, const u32 *bottom, int w, int h)
 static void compose(int engine, const u32 *native, u32 *out, int S, int bright)
 {
     const u32 *src = gpu2d_src[engine], *h3d = gx_hires();
-    int W = DS_W * S, x, y, sx, sy;
+    int W = DS_W * S, H3 = gx_stride(), x, y, sx, sy;
     int hofs = engine ? 0 : *(u16 *)(io + 0x10) & 0x1ff;
     for (y = 0; y < DS_H; y++)
         for (x = 0; x < DS_W; x++) {
@@ -64,8 +68,8 @@ static void compose(int engine, const u32 *native, u32 *out, int S, int bright)
             if (sv == GPU2D_SRC_3D) {
                 int tx = (x + hofs) & 511;
                 if (tx < DS_W) {
-                    hp = h3d + y * S * W + tx * S;
-                    hw = W;
+                    hp = h3d + y * S * H3 + tx * S;
+                    hw = H3;
                 }
             } else if (sv & GPU2D_SRC_VRAM) {
                 u32 boff, rel;
@@ -136,8 +140,9 @@ static void display_capture(const u32 *graphics)
         k->valid = 0;
         if (S > 1 && src == 0) {  /* only plain captures of engine A or the 3D layer have a high resolution form */
             const u32 *from = cap & (1u << 24) ? gx_hires() : hi_a;
+            int stride = cap & (1u << 24) ? gx_stride() : DS_W * S;
             for (y = 0; y < h * S; y++)
-                memcpy(k->img + y * w * S, from + y * DS_W * S, (size_t)w * S * 4);
+                memcpy(k->img + y * w * S, from + y * stride, (size_t)w * S * 4);
             k->valid = 1;
             k->s = S;
             k->w = w;
@@ -173,30 +178,44 @@ static void render_a(const u32 *f3d, u32 *scr, u32 *hi, int S, int capture)
     }
 }
 
-/* ---- high frame rate: interpolated frames ----------------------------------------------------------------------
+/* ---- high frame rate and widescreen -----------------------------------------------------------------------------
  * The game runs at 60 frames a second (its logic counts frames). Above that, frames in between are presented while
- * the game waits for the next VBlank (hw_halt), interpolated between the game's last two frames: the 3D with its
- * geometry and skeletons interpolated (gpu3d.c); the 2D from the registers and OAM of both frames, with sprite
- * positions and rotation/scale, background scrolling and rotation, and fades interpolated (anything that changed
- * identity or jumped is taken from the newer frame). So everything is shown one game frame late, in step.
- * Rate: NDOGS_FPS, else 120 or the monitor's refresh rate if lower (Windows); off at 60 or below, while the game
- * swaps its screens every frame (3D on both screens: consecutive 3D frames belong to different screens), and with
- * NDOGS_FPS=0. Frames are presented on a steady grid; if the machine can't keep up, the rate drops to what it can
- * do. */
+ * the game waits for the next VBlank (hw_halt), interpolated between the game's frames: the 3D with its geometry
+ * and skeletons interpolated (gpu3d.c); the 2D from the registers and OAM of both frames, with sprite positions and
+ * rotation/scale, background scrolling and rotation, and fades interpolated (anything that changed identity or
+ * jumped is taken from the newer frame). One screen with 3D: between the last two frames, shown one frame late.
+ * 3D on both screens (the game swaps the screens every frame, drawing each one's 3D every other frame and showing
+ * it on the other screen through display capture): each screen between the two last frames it was drawn in, both
+ * rendered here from their own 3D, shown two frames late. Rate: NDOGS_FPS, else 120 or the monitor's refresh rate
+ * if lower (Windows); off at 60 or below and with NDOGS_FPS=0. Frames are presented on a steady grid; if the
+ * machine can't keep up, the rate drops to what it can do.
+ * Widescreen (gx_set_view): the screen with the 3D (or both) is shown wider, or taller, to fill the window
+ * (window_view), the extra coming from the 3D renderer's wider or taller view; the 2D stays in the middle. */
 extern double now_ms(void);
-static u8 io3d[0x2000];        /* registers of the 3D frame's VBlank (clear colour, fog, toon, edges) */
-static u8 io_prev[0x2000], io_cur[0x2000], io_i[0x2000], io_save[0x2000];  /* the last two frames' registers */
-static u16 oam_prev[0x400], oam_cur[0x400], oam_i[0x400];                  /* and OAM (both engines) */
-static double f_prev, f_cur;   /* when they were drawn */
-static u32 i3d[DS_W * DS_H], i_a[DS_W * DS_H], i_b[DS_W * DS_H];
-static u32 hi_ia[DS_W * DS_H * MAXS * MAXS], hi_ib[DS_W * DS_H * MAXS * MAXS];
+#define WMAX 2
+typedef struct {
+    u8 io[0x2000], io3d[0x2000];  /* registers at the frame, and at the VBlank of the 3D list it showed */
+    u16 oam[0x400];               /* OAM of both engines */
+    double time;
+    unsigned seq;                 /* that 3D list (gx_list_seq) */
+} Frame;
+static Frame fh[4];               /* the last four frames (fr(0) the newest) */
+static int fh_head, fh_count;
+static u8 io3d[0x2000];           /* registers of the last 3D list's VBlank */
+static u8 io_i[0x2000], io_save[0x2000];
+static u16 oam_i[0x400];
+static u32 i3d[DS_W * DS_H], scr_i[2][DS_W * DS_H], hi_i[2][DS_W * DS_H * MAXS * MAXS];
+static u32 i_b[DS_W * DS_H], hi_ib[DS_W * DS_H * MAXS * MAXS];
+static u32 wide_buf[2][DS_W * DS_H * WMAX * MAXS * MAXS];  /* a screen up to twice the area */
 static double i_period, i_cost, i_last;  /* target ms per frame (0 off), measured cost, last present */
-static int i_swaps;                      /* frames since the screens last swapped */
 static unsigned i_presents;              /* frames presented (NDOGS_JANK) */
-static u32 i_pow;
 static const u32 *i_top, *i_bottom;      /* the last real frame's screens */
 static int i_S;
 extern int window_refresh_hz(void);
+
+static Frame *fr(int k) { return &fh[(fh_head - k) & 3]; }
+static u32 fpow(int k) { return *(u32 *)(fr(k)->io + 0x304); }
+static int has3d(int k) { return (*(u32 *)fr(k)->io & 0x108) == 0x108; }  /* BG0 on, showing 3D */
 
 static void interp_init(void)
 {
@@ -216,15 +235,32 @@ static void interp_init(void)
         fprintf(stderr, "video: up to %d fps (game logic 60, frames in between interpolated)\n", hz);
 }
 
-/* video_frame: keep this frame's registers and OAM as the newer of the pair */
+/* video_frame: keep this frame */
 static void interp_keep(void)
 {
-    memcpy(io_prev, io_cur, sizeof io_cur);
-    memcpy(io_cur, io, sizeof io_cur);
-    memcpy(oam_prev, oam_cur, sizeof oam_cur);
-    memcpy(oam_cur, (const void *)0x07000000u, sizeof oam_cur);
-    f_prev = f_cur;
-    f_cur = now_ms();
+    Frame *f;
+    fh_head++;
+    if (fh_count < 4)
+        fh_count++;
+    f = fr(0);
+    memcpy(f->io, io, sizeof f->io);
+    memcpy(f->io3d, io3d, sizeof f->io3d);
+    memcpy(f->oam, (const void *)0x07000000u, sizeof f->oam);
+    f->time = now_ms();
+    f->seq = gx_list_seq();
+}
+
+/* 3D on both screens: the screens swapped with every one of the last frames, each with a new 3D list */
+static int dual(void)
+{
+    return fh_count >= 4 && ((fpow(0) ^ fpow(1)) & (fpow(1) ^ fpow(2)) & (fpow(2) ^ fpow(3)) & 0x8000) &&
+           fr(0)->seq - fr(1)->seq == 1 && fr(1)->seq - fr(2)->seq == 1 && fr(2)->seq - fr(3)->seq == 1;
+}
+
+/* the screens stayed put over the last two frames */
+static int steady(void)
+{
+    return fh_count >= 2 && !((fpow(0) ^ fpow(1)) & 0x8000);
 }
 
 /* a value of <bits> bits that wraps (scroll offsets, sprite coordinates): the short way round, if under <max> */
@@ -249,17 +285,17 @@ static void w16(u8 *r, int o, u16 v) { r[o] = (u8)v; r[o + 1] = (u8)(v >> 8); }
 static s32 r28(const u8 *r, int o) { return (s32)((u32)(r16(r, o) | r16(r, o + 2) << 16) << 4) >> 4; }
 static void w28(u8 *r, int o, s32 v) { w16(r, o, (u16)v); w16(r, o + 2, (u16)(((u32)v >> 16) & 0x0fff)); }
 
-/* registers and OAM at t between the last two frames (into io_i, oam_i) */
-static void interp_2d(float t)
+/* registers and OAM at t between frames fa (older) and fb (into io_i, oam_i) */
+static void interp_2d(float t, const Frame *fa, const Frame *fb)
 {
     int e, i, k;
-    memcpy(io_i, io_cur, sizeof io_i);
-    memcpy(oam_i, oam_cur, sizeof oam_i);
+    memcpy(io_i, fb->io, sizeof io_i);
+    memcpy(oam_i, fb->oam, sizeof oam_i);
     for (e = 0; e < 2; e++) {
-        const u8 *a = io_prev + e * 0x1000, *b = io_cur + e * 0x1000;
+        const u8 *a = fa->io + e * 0x1000, *b = fb->io + e * 0x1000;
         u8 *o = io_i + e * 0x1000;
         u16 *oa = oam_i + e * 0x200;
-        const u16 *pa = oam_prev + e * 0x200, *pb = oam_cur + e * 0x200;
+        const u16 *pa = fa->oam + e * 0x200, *pb = fb->oam + e * 0x200;
         for (i = 0; i < 4; i++) {  /* BG scrolling (9 bit) */
             int hv;
             for (hv = 0; hv < 2; hv++) {
@@ -281,9 +317,9 @@ static void interp_2d(float t)
         if ((r16(a, 0x6c) ^ r16(b, 0x6c)) >> 14 == 0)
             w16(o, 0x6c, (u16)((r16(b, 0x6c) & 0xffe0) | lerp_s(r16(a, 0x6c) & 31, r16(b, 0x6c) & 31, 31, t)));
         /* sprites: the game reuses OAM slots for different sprites from frame to frame, so a sprite is matched by
-         * what it is (tile, palette, shape, size, mode, rotation/flip settings), with the one nearest its new place
-         * in the previous frame, in any slot; one with no match within the limit is shown where it is now. Each
-         * previous sprite is used once. Affine matrices turn. */
+         * what it is (tile, palette, shape, size, mode, rotation/flip settings), with the one nearest its new
+         * place in the older frame, in any slot; one with no match within the limit is shown where it is now.
+         * Each older sprite is used once. Affine matrices turn. */
         {
             u8 used[128];
             memset(used, 0, sizeof used);
@@ -324,53 +360,150 @@ static void interp_2d(float t)
     }
 }
 
-/* Both screens interpolated to now (screens in *top, *bottom); 0 if there is no pair of frames to interpolate. */
-static int interp_frame(double now, const u32 **top, const u32 **bottom)
+/* Widescreen: engine A's screen (scr, a DS screen at scale S) with the 3D renderer's extra width or height around
+ * it (from the frame just rendered; where it has nothing, the backdrop), master brightness applied as on the
+ * screen. Into out; its size in *w x *h. Uses the registers in io. */
+static const u32 *widen(const u32 *scr, int S, u32 *out, int *w, int *h)
 {
-    double span = f_cur - f_prev;
-    float t, t3;
-    const u32 *f3d = frame3d;
-    int S = i_S;
-    double ta, tb;
-    if (!i_period || i_swaps < 2 || !i_top || span <= 0 || span > 50.0)
-        return 0;
-    t = (float)((now - f_cur) / span);
-    t = t < 0 ? 0 : t > 1 ? 1 : t;
-    ta = now_ms();
-    t3 = gx_interp_pos(now);
-    if (t3 >= 0 && gx_render_interp(io3d, t, i3d))  /* the 3D at the 2D's position: in step */
-        f3d = i3d;
-    tb = now_ms();
-    interp_2d(t);
-    memcpy(io_save, io, sizeof io);
-    memcpy(io, io_i, sizeof io);
-    gpu2d_oam = oam_i;
-    gpu2d_render(1, io, 0, i_b);
-    if (S > 1)
-        compose(1, i_b, hi_ib, S, 1);
-    render_a(f3d, i_a, hi_ia, S, 0);
-    gpu2d_oam = 0;
-    memcpy(io, io_save, sizeof io);
-    if (getenv("NDOGS_ILOG"))
-        fprintf(stderr, "interp: t %.2f 3d %.2fms 2d %.2fms\n", t, tb - ta, now_ms() - tb);
-    if (i_pow & 0x8000) {
-        *top = S > 1 ? hi_ia : i_a;
-        *bottom = S > 1 ? hi_ib : i_b;
-    } else {
-        *top = S > 1 ? hi_ib : i_b;
-        *bottom = S > 1 ? hi_ia : i_a;
+    int wpx = gx_wide_px(), hpx = gx_tall_px(), W = wpx * S, H = hpx * S, sw = DS_W * S, sh = DS_H * S;
+    int ox = (wpx - DS_W) / 2 * S, oy = (hpx - DS_H) / 2 * S, st = gx_stride(), x, y;
+    const u32 *h3 = gx_hires_wide();
+    u16 bd = *(volatile u16 *)0x05000000u;  /* engine A's backdrop colour */
+    u32 back = (u32)((bd & 31) * 255 / 31) << 16 | (u32)(((bd >> 5) & 31) * 255 / 31) << 8 | ((bd >> 10) & 31) * 255 / 31;
+    int bright = (*(u16 *)(io + 0x6c) >> 14) % 3 && (*(u16 *)(io + 0x6c) & 31);
+    if ((wpx == DS_W && hpx == DS_H) || gx_scale() != S) {
+        *w = sw;
+        *h = sh;
+        return scr;
     }
-    return 1;
+    if (bright)
+        back = gpu2d_bright_pixel(0, io, back);
+    for (y = 0; y < H; y++) {
+        const u32 *hr = h3 + y * st;
+        u32 *o = out + y * W;
+        int inside = y >= oy && y < oy + sh;
+        if (inside)
+            memcpy(o + ox, scr + (y - oy) * sw, (size_t)sw * 4);
+        for (x = 0; x < W; x++) {
+            u32 c;
+            if (inside && x == ox)
+                x += sw;
+            if (x >= W)
+                break;
+            c = hr[x];
+            o[x] = c >> 31 ? (bright ? gpu2d_bright_pixel(0, io, c) : c & 0xffffff) : back;
+        }
+    }
+    *w = W;
+    *h = H;
+    return out;
+}
+
+/* Engine A's screen at t between frames fa and fb (its 2D, and the 3D lists they showed: ages relative to the newest
+ * list), widened, into buffers k; *w x *h its size. 0 if the 3D can't be interpolated. */
+static const u32 *screen_a_at(const Frame *fa, const Frame *fb, float t, int S, int k, int *w, int *h)
+{
+    unsigned seq = gx_list_seq();
+    const u32 *s;
+    if (seq - fb->seq > 3 || seq - fa->seq > 3 || !gx_render_pair(fb->io3d, (int)(seq - fb->seq), (int)(seq - fa->seq),
+                                                                   t, i3d))
+        return 0;
+    render_a(i3d, scr_i[k], hi_i[k], S, 0);
+    s = S > 1 ? hi_i[k] : scr_i[k];
+    return widen(s, S, wide_buf[k], w, h);
+}
+
+/* What to show at <now> (latest: the newest frames, not interpolated): both screens into *top/*bottom, their sizes
+ * into *tw x *th, *bw x *bh. 1 if rendered here (interpolated or widened), 0 if the last real frame's screens are
+ * to be shown as they are. */
+static int compose_now(double now, int latest, const u32 **top, int *tw, int *th, const u32 **bottom, int *bw,
+                       int *bh, int S)
+{
+    int wide = (gx_wide_px() > DS_W || gx_tall_px() > DS_H) && gx_scale() == S, k;
+    *tw = *bw = DS_W * S;
+    *th = *bh = DS_H * S;
+    if (dual() && (i_period || wide)) {
+        /* each screen between the last two frames it was drawn in: frames 0 and 2, frames 1 and 3 */
+        const u32 *out[2];
+        int w[2], h[2], ok = 1;
+        memcpy(io_save, io, sizeof io);
+        for (k = 0; k < 2 && ok; k++) {
+            const Frame *fa = fr(k + 2), *fb = fr(k);
+            double span = fb->time - fa->time;
+            float t = latest ? 1.0f : (float)((now - fb->time) / span);
+            if (span <= 0 || span > 100.0) {
+                ok = 0;
+                break;
+            }
+            t = t < 0 ? 0 : t > 1 ? 1 : t;
+            interp_2d(t, fa, fb);
+            memcpy(io, io_i, sizeof io);
+            gpu2d_oam = oam_i;
+            out[k] = screen_a_at(fa, fb, t, S, k, &w[k], &h[k]);
+            gpu2d_oam = 0;
+            ok = out[k] != 0;
+        }
+        memcpy(io, io_save, sizeof io);
+        if (ok) {
+            int a_top = fpow(0) & 0x8000;  /* engine A, now drawing frame 0's screen, is on top */
+            *top = out[a_top ? 0 : 1], *tw = w[a_top ? 0 : 1], *th = h[a_top ? 0 : 1];
+            *bottom = out[a_top ? 1 : 0], *bw = w[a_top ? 1 : 0], *bh = h[a_top ? 1 : 0];
+            return 1;
+        }
+        return 0;  /* (not widened: the screens would change size every frame) */
+    }
+    if (i_period && !latest && steady()) {  /* one frame late, between the last two */
+        const Frame *fa = fr(1), *fb = fr(0);
+        double span = fb->time - fa->time;
+        float t = (float)((now - fb->time) / span);
+        const u32 *f3d = frame3d, *a, *b;
+        int w, h;
+        if (span > 0 && span <= 50.0) {
+            t = t < 0 ? 0 : t > 1 ? 1 : t;
+            if (gx_interp_pos(now) >= 0 && gx_render_pair(fb->io3d, 0, 1, t, i3d))  /* 3D at the 2D's position */
+                f3d = i3d;
+            interp_2d(t, fa, fb);
+            memcpy(io_save, io, sizeof io);
+            memcpy(io, io_i, sizeof io);
+            gpu2d_oam = oam_i;
+            gpu2d_render(1, io, 0, i_b);
+            if (S > 1)
+                compose(1, i_b, hi_ib, S, 1);
+            render_a(f3d, scr_i[0], hi_i[0], S, 0);
+            a = S > 1 ? hi_i[0] : scr_i[0];
+            b = S > 1 ? hi_ib : i_b;
+            if (has3d(0))
+                a = widen(a, S, wide_buf[0], &w, &h);
+            else
+                w = DS_W * S, h = DS_H * S;
+            gpu2d_oam = 0;
+            memcpy(io, io_save, sizeof io);
+            if (fpow(0) & 0x8000)
+                *top = a, *tw = w, *th = h, *bottom = b;
+            else
+                *top = b, *bottom = a, *bw = w, *bh = h;
+            return 1;
+        }
+    }
+    if (wide && has3d(0) && !dual()) {  /* the real frame, the 3D screen widened */
+        const u32 *a = S > 1 ? hi_a : screen_a;
+        if (*top == a)
+            *top = widen(a, S, wide_buf[0], tw, th);
+        else
+            *bottom = widen(a, S, wide_buf[0], bw, bh);
+        return 1;
+    }
+    return 0;
 }
 
 /* present: interpolated to now if possible, else the last real frame */
 static int present(const u32 *top, const u32 *bottom, int S)
 {
     double t0 = now_ms();
-    int r, in = interp_frame(t0, &top, &bottom);
-    r = window_present(top, bottom, DS_W * S, DS_H * S);
+    int tw, th, bw, bh, r, in = compose_now(t0, !i_period, &top, &tw, &th, &bottom, &bw, &bh, S);
+    r = window_present(top, tw, th, bottom, bw, bh, DS_W * S, DS_H * S);
     i_presents++;
-    if (in) {  /* adapt the rate to the machine: an interpolated frame must leave time for the game */
+    if (in && i_period) {  /* adapt the rate to the machine: an interpolated frame must leave time for the game */
         double c = now_ms() - t0;
         i_cost = i_cost ? i_cost * 0.9 + c * 0.1 : c;
     }
@@ -381,8 +514,11 @@ static int present(const u32 *top, const u32 *bottom, int S)
  * independent of the game's frames, which only bring new data; the game's own present is skipped (video_frame). */
 static int interp_active(void)
 {
-    double span = f_cur - f_prev;
-    return i_period && i_swaps >= 2 && i_top && span > 0 && span <= 50.0;
+    if (!i_period || !i_top)
+        return 0;
+    if (dual())
+        return fr(0)->time - fr(2)->time <= 100.0 && fr(1)->time - fr(3)->time <= 100.0;
+    return steady() && fr(0)->time - fr(1)->time > 0 && fr(0)->time - fr(1)->time <= 50.0;
 }
 
 /* hw_halt: when the next frame is due; 0 if none, or if it wouldn't be done by <deadline> (a little after the next
@@ -421,7 +557,14 @@ void video_vblank(void)
         }
         hw_io_snapshot(io);
         memcpy(io3d, io, sizeof io3d);
-        if (i_period && i_swaps >= 2 && !(*(u32 *)(io + 0x64) & 0x80000000u))  /* no capture needs the frame */
+        /* widescreen for the coming frame: both screens if the game is drawing 3D on both, else the one with it */
+        {
+            float wf = 1.0f, hf = 1.0f;
+            if (fh_count && (dual() || has3d(0)))
+                window_view(dual(), &wf, &hf);
+            gx_set_view(wf, fh_count && dual() ? 1.0f : hf);  /* both screens: only wider (see window_view) */
+        }
+        if (i_period && steady() && !dual() && !(*(u32 *)(io + 0x64) & 0x80000000u))  /* no capture needs it */
             gx_take_swapped(io, frame3d);
         else
             gx_render_swapped(io, frame3d);
@@ -514,10 +657,11 @@ void video_frame(void)
         while (*p) {
             if (atoi(p) == frame) {
                 if (S > 1)
-                    save_bmp(frame, powcnt & 0x8000 ? hi_a : hi_b, powcnt & 0x8000 ? hi_b : hi_a, DS_W * S, DS_H * S);
+                    save_bmp(frame, powcnt & 0x8000 ? hi_a : hi_b, DS_W * S, DS_H * S, powcnt & 0x8000 ? hi_b : hi_a,
+                             DS_W * S, DS_H * S);
                 else
-                    save_bmp(frame, powcnt & 0x8000 ? screen_a : screen_b, powcnt & 0x8000 ? screen_b : screen_a,
-                             DS_W, DS_H);
+                    save_bmp(frame, powcnt & 0x8000 ? screen_a : screen_b, DS_W, DS_H,
+                             powcnt & 0x8000 ? screen_b : screen_a, DS_W, DS_H);
                 fprintf(stderr, "shot %d: POWCNT1=%08x DISPCNT A=%08x B=%08x BRIGHT A=%04x B=%04x VRAMCNT=%08x %08x %04x\n",
                         frame, powcnt, *(u32 *)(io + 0), *(u32 *)(io + 0x1000), *(u16 *)(io + 0x6c),
                         *(u16 *)(io + 0x106c), *(u32 *)(io + 0x240), *(u32 *)(io + 0x244), *(u16 *)(io + 0x248));
@@ -545,18 +689,22 @@ void video_frame(void)
         bottom = powcnt & 0x8000 ? screen_b : screen_a;
     }
     interp_init();
-    i_swaps = (powcnt ^ i_pow) & 0x8000 ? 0 : i_swaps + 1;
-    i_pow = powcnt;
     i_top = top;
     i_bottom = bottom;
     i_S = S;
-    if (getenv("NDOGS_SHOT") && i_period) {  /* with NDOGS_FPS: also the frame halfway to the next (shot_1<frame>) */
+    if (getenv("NDOGS_SHOT")) {  /* also what is shown (shot_2<frame>: widened) and, interpolating, halfway between
+                                  * the frames (shot_1<frame>) */
         const char *p = getenv("NDOGS_SHOT");
         for (; *p; p++)
             if (atoi(p) == frame && (p == getenv("NDOGS_SHOT") || p[-1] == ',')) {
-                const u32 *it, *ib;
-                if (interp_frame(f_cur + (f_cur - f_prev) * 0.5, &it, &ib))  /* halfway from the previous frame */
-                    save_bmp(100000 + frame, it, ib, DS_W * S, DS_H * S);
+                const u32 *it = top, *ib = bottom;
+                int tw, th, bw, bh;
+                if (compose_now(now_ms(), 1, &it, &tw, &th, &ib, &bw, &bh, S))
+                    save_bmp(200000 + frame, it, tw, th, ib, bw, bh);
+                it = top, ib = bottom;
+                if (i_period && compose_now(fr(0)->time + (fr(0)->time - fr(dual() ? 2 : 1)->time) * 0.5, 0, &it, &tw,
+                                            &th, &ib, &bw, &bh, S))
+                    save_bmp(100000 + frame, it, tw, th, ib, bw, bh);
             }
     }
     {   /* interpolating, the frames on the grid show it (video_present_interp); unless none fitted in since the

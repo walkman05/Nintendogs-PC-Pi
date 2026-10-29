@@ -101,7 +101,9 @@ You can also build the Pi program on Windows with Arm's cross-compiler (Arm GNU 
 
 **Playing:** the mouse is the stylus; arrows, Z/X/A/S, Q/W, Enter and Shift are the DS buttons (or an XInput
 gamepad). F9 switches the screens between stacked, side by side and automatic (follows the window's shape), F10
-the aspect (keep / stretch / whole multiples), F11 full screen, F8 the 3D resolution. On Windows the game shows
+the aspect (keep / stretch / whole multiples), F11 full screen, F8 the 3D resolution (automatic by default: matched
+to the window's size, so it stays sharp). Keeping the aspect, the 3D screen's camera widens or grows taller to
+fill the window instead of leaving bars (`NDOGS_WIDE=0` turns that off). On Windows the game shows
 up to 120 frames a second (or your monitor's rate if lower; `NDOGS_FPS=<n>` to choose, `0` for 60): the game
 itself runs at 60, and the frames in between are interpolated, so movement is smooth on high refresh rate and
 G-Sync/FreeSync monitors. If the game ever closes by itself, `crash.txt` next to it says where.

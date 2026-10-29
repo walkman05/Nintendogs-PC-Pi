@@ -1,7 +1,7 @@
 /* The window: both DS screens, stacked, side by side or whichever fits the window's shape better (F9, the default:
  * the layout follows the window as it is resized), scaled to the window keeping the aspect ratio, stretched
- * to fill it, or at the largest whole multiple (F10); F8 cycles the internal resolution (1-4x, NDOGS_SCALE, default
- * 2). The mouse on the bottom screen is the stylus. Keyboard: arrows = D-pad, Z = A, X = B, A = Y, S = X, Q = L,
+ * to fill it, or at the largest whole multiple (F10); F8 cycles the internal resolution (auto: the window's size, or
+ * 1-4x, NDOGS_SCALE). The mouse on the bottom screen is the stylus. Keyboard: arrows = D-pad, Z = A, X = B, A = Y, S = X, Q = L,
  * W = R, Enter = Start, Shift (or Backspace) = Select, F11 = full screen (Windows). Gamepads: XInput on Windows
  * (A/B/X/Y in the Nintendo layout, D-pad or left stick, shoulders = L/R, Start/Back = Start/Select).
  * Windows: Win32 GDI. Linux: X11 through dlopen (no build dependency; headless if there's no display).
@@ -26,7 +26,11 @@
 #define KEY_Y 0x800
 
 #define MAXS 4
-static u32 pixels[DS_W * DS_H * 2 * MAXS * MAXS];  /* the canvas: both screens in the current layout */
+#define WMAX 2
+#define CANVAS (DS_W * DS_H * 4 * MAXS * MAXS)  /* both screens, one of them up to twice the area, plus margins */
+static u32 pixels[CANVAS];  /* the canvas: both screens in the current layout */
+/* each screen's size in DS pixels (the one with the 3D can be wider or taller: see window_view) */
+static int top_dw = DS_W, top_dh = DS_H, bot_dw = DS_W, bot_dh = DS_H;
 static int can_w = DS_W, can_h = DS_H * 2;        /* canvas size */
 static int scr_w = DS_W, scr_h = DS_H;            /* one screen in the canvas */
 static int closed;
@@ -37,9 +41,18 @@ static int win_w, win_h;                  /* client size */
 static int layout;                        /* 0 stacked, 1 side by side (in use: see layout_mode) */
 static int layout_mode = 2;               /* 0 stacked, 1 side by side, 2 whichever fits the window better */
 static int aspect;                        /* 0 keep, 1 stretch, 2 whole multiples */
-static int scale_req = -1;
+static int scale_req = -1;               /* internal resolution 1-MAXS, 0 auto */
 static int filter_linear = 1;             /* GPU presenter: bilinear (1) or nearest (0) scaling, F7 */
+static void fit(int *x, int *y, int *w, int *h);
+#ifdef __arm__
+#define AUTO_MAXS 2                       /* a Raspberry Pi can't render more in time */
+#else
+#define AUTO_MAXS MAXS
+#endif
 
+/* Internal resolution. Auto (the default): the smallest whole multiple of the DS resolution that covers the size a
+ * screen is shown at, so the picture is only ever scaled down a little (sharp) instead of up (blurry); up to 4x
+ * (2x on ARM). NDOGS_SCALE=1-4 or F8 fixes it. */
 int window_scale(void)
 {
     if (scale_req < 0) {
@@ -48,19 +61,30 @@ int window_scale(void)
         layout_mode = getenv("NDOGS_LAYOUT") ? atoi(getenv("NDOGS_LAYOUT")) % 3 : 2;
         layout = layout_mode == 1;
         aspect = getenv("NDOGS_ASPECT") ? atoi(getenv("NDOGS_ASPECT")) % 3 : 0;
-        scale_req = getenv("NDOGS_SCALE") ? atoi(getenv("NDOGS_SCALE")) : 2;
-        scale_req = scale_req < 1 ? 1 : scale_req > MAXS ? MAXS : scale_req;
+        scale_req = getenv("NDOGS_SCALE") ? atoi(getenv("NDOGS_SCALE")) : 0;
+        scale_req = scale_req < 0 ? 0 : scale_req > MAXS ? MAXS : scale_req;
+    }
+    if (!scale_req) {
+        int x, y, w, h, sh, s;
+        if (win_w <= 0 || win_h <= 0)
+            return 2;
+        fit(&x, &y, &w, &h);
+        sh = h * DS_H / (layout ? (top_dh > bot_dh ? top_dh : bot_dh) : top_dh + bot_dh);  /* a DS screen's height */
+        s = (sh + DS_H - 1) / DS_H;
+        return s < 1 ? 1 : s > AUTO_MAXS ? AUTO_MAXS : s;
     }
     return scale_req;
 }
 
-/* function keys shared by the platforms: F8 resolution, F9 layout, F10 aspect */
+/* function keys shared by the platforms: F8 resolution (auto, 1-4x), F9 layout, F10 aspect */
 static void fkey(int n)
 {
     if (n == 7)
         filter_linear ^= 1;
-    else if (n == 8)
-        scale_req = window_scale() % MAXS + 1;
+    else if (n == 8) {
+        window_scale();
+        scale_req = (scale_req + 1) % (MAXS + 1);
+    }
     else if (n == 9)
         layout_mode = (layout_mode + 1) % 3;
     else if (n == 10)
@@ -70,7 +94,8 @@ static void fkey(int n)
 /* where the canvas sits in the client area */
 static void fit(int *x, int *y, int *w, int *h)
 {
-    int lw = layout ? DS_W * 2 : DS_W, lh = layout ? DS_H : DS_H * 2;  /* canvas shape in DS pixels */
+    int lw = layout ? top_dw + bot_dw : top_dw > bot_dw ? top_dw : bot_dw;  /* canvas shape in DS pixels */
+    int lh = layout ? (top_dh > bot_dh ? top_dh : bot_dh) : top_dh + bot_dh;
     if (aspect == 1) {
         *w = win_w;
         *h = win_h;
@@ -95,47 +120,128 @@ static void mouse_at(int cx, int cy)
     fit(&x, &y, &w, &h);
     if (w <= 0 || h <= 0)
         return;
-    if (layout) {  /* bottom screen on the right */
-        mouse_x = (cx - x) * DS_W * 2 / w - DS_W;
-        mouse_y = (cy - y) * DS_H / h;
-    } else {
-        mouse_x = (cx - x) * DS_W / w;
-        mouse_y = (cy - y) * DS_H * 2 / h - DS_H;
+    /* the touch screen is the DS screen's 256 x 192 in the middle of the bottom one (in canvas DS pixels: each
+     * screen centred in its row or column) */
+    {
+        int lw = layout ? top_dw + bot_dw : top_dw > bot_dw ? top_dw : bot_dw;
+        int lh = layout ? (top_dh > bot_dh ? top_dh : bot_dh) : top_dh + bot_dh;
+        int bx = layout ? top_dw + (bot_dw - DS_W) / 2 : (lw - DS_W) / 2;
+        int by = layout ? (lh - DS_H) / 2 : top_dh + (bot_dh - DS_H) / 2;
+        mouse_x = (cx - x) * lw / w - bx;
+        mouse_y = (cy - y) * lh / h - by;
     }
 }
 
-/* the layout in use: auto picks the one that shows the screens bigger in the window (wide: side by side; tall or
- * square: stacked), so resizing or going full screen changes it */
+/* The 3D screen's view in layout l, made wider or taller (wf, hf: 1-2) to fill the window: stacked, a window
+ * wider than the screens widens it, a taller one makes it taller; side by side the same. both: 3D on both screens
+ * (both widen; never taller: the game's two views are the upper and lower halves of one, so taller ones would
+ * overlap and show the same things twice). Only keeping the aspect (F10); NDOGS_WIDE=0 off, =<width>[,<height>] fixed factors. */
+static int view_mode = -1, view_both;
+static float view_fixed, view_fixed_h = 1.0f;
+static void view_for(int l, int both, float *wf, float *hf)
+{
+    float a, f;
+    *wf = *hf = 1.0f;
+    if (view_mode < 0) {
+        view_mode = !getenv("NDOGS_WIDE") ? 1 : atof(getenv("NDOGS_WIDE")) >= 1.0 ? 2 : 0;
+        view_fixed = view_mode == 2 ? (float)atof(getenv("NDOGS_WIDE")) : 1.0f;
+        if (view_mode == 2 && strchr(getenv("NDOGS_WIDE"), ','))
+            view_fixed_h = (float)atof(strchr(getenv("NDOGS_WIDE"), ',') + 1);
+    }
+    if (view_mode == 2) {
+        *wf = view_fixed;
+        *hf = view_fixed_h;
+        return;
+    }
+    if (!view_mode || aspect != 0 || win_w <= 0 || win_h <= 0)
+        return;
+    a = (float)win_w / win_h;  /* the window's shape */
+    if (!l) {  /* stacked: 256 x 384 */
+        if (a > (float)DS_W / (DS_H * 2))
+            *wf = a * DS_H * 2 / DS_W;                                         /* wide x 384 */
+        else if (!both)
+            *hf = ((float)DS_W / a - DS_H) / DS_H;                            /* 256 x (tall + 192) */
+    } else {   /* side by side: 512 x 192 */
+        if (a > (float)DS_W * 2 / DS_H)
+            *wf = both ? a * DS_H / (DS_W * 2) : (a * DS_H - DS_W) / DS_W;    /* (wide + 256) x 192 */
+        else if (!both)
+            *hf = (float)DS_W * 2 / a / DS_H;                                  /* 512 x tall */
+    }
+    f = *wf * *hf;
+    *wf = *wf < 1 ? 1 : *wf > WMAX ? WMAX : *wf;
+    *hf = *hf < 1 ? 1 : *hf > WMAX ? WMAX : *hf;
+    (void)f;
+}
+
+/* The layout in use: auto picks the one whose screens fill more of the window, counting the 3D screen's wider or
+ * taller view, so resizing or going full screen changes it. */
 static void choose_layout(void)
 {
     if (layout_mode == 2) {
         if (win_w > 0 && win_h > 0) {
-            /* fitted height of one screen: stacked min(W*3/4, H/2), side by side min(W*3/8, H) */
-            int stacked = win_w * 3 / 4 < win_h / 2 ? win_w * 3 / 4 : win_h / 2;
-            int side = win_w * 3 / 8 < win_h ? win_w * 3 / 8 : win_h;
-            layout = side > stacked;
+            float area[2];
+            int l;
+            for (l = 0; l < 2; l++) {
+                float wf, hf, w1, h1, w2, h2, lw, lh, k;
+                view_for(l, view_both, &wf, &hf);
+                w1 = wf * DS_W, h1 = hf * DS_H;  /* the 3D screen */
+                w2 = view_both ? w1 : DS_W, h2 = view_both ? h1 : DS_H;
+                lw = l ? w1 + w2 : (w1 > w2 ? w1 : w2);
+                lh = l ? (h1 > h2 ? h1 : h2) : h1 + h2;
+                k = win_w / lw < win_h / lh ? win_w / lw : win_h / lh;
+                area[l] = k * k * (w1 * h1 + w2 * h2);
+            }
+            layout = area[1] > area[0] * 1.01f;
         }
     } else
         layout = layout_mode;
 }
 
-/* both screens (w x h each) into the canvas */
-static void build_canvas(const u32 *top, const u32 *bottom, int w, int h)
+/* for video.c: the 3D screen's view (both: 3D on both) in the layout that will be used */
+void window_view(int both, float *wf, float *hf)
 {
-    int y;
+    view_both = both;
     choose_layout();
+    view_for(layout, both, wf, hf);
+}
+
+/* one screen (sw x sh) into the canvas, centred in the cell at (x0, y0) cw x ch (black around) */
+static void canvas_put(const u32 *src, int sw, int sh, int x0, int y0, int cw, int ch)
+{
+    int y, ox = (cw - sw) / 2, oy = (ch - sh) / 2;
+    for (y = 0; y < ch; y++) {
+        u32 *row = pixels + (y0 + y) * can_w + x0;
+        if (y < oy || y >= oy + sh) {
+            memset(row, 0, (size_t)cw * 4);
+            continue;
+        }
+        if (ox) {
+            memset(row, 0, (size_t)ox * 4);
+            memset(row + ox + sw, 0, (size_t)(cw - sw - ox) * 4);
+        }
+        memcpy(row + ox, src + (y - oy) * sw, (size_t)sw * 4);
+    }
+}
+
+/* both screens into the canvas: the top one tw x th, the bottom bw x bh (w x h: a DS screen at this scale; the
+ * screen with the 3D can be wider or taller) */
+static void build_canvas(const u32 *top, int tw, int th, const u32 *bottom, int bw, int bh, int w, int h)
+{
+    choose_layout();
+    top_dw = DS_W * tw / w, top_dh = DS_H * th / h;
+    bot_dw = DS_W * bw / w, bot_dh = DS_H * bh / h;
     scr_w = w;
     scr_h = h;
-    can_w = layout ? w * 2 : w;
-    can_h = layout ? h : h * 2;
-    if (!layout) {
-        memcpy(pixels, top, (size_t)w * h * 4);
-        memcpy(pixels + w * h, bottom, (size_t)w * h * 4);
+    can_w = layout ? tw + bw : tw > bw ? tw : bw;
+    can_h = layout ? (th > bh ? th : bh) : th + bh;
+    if ((size_t)can_w * can_h > CANVAS)
         return;
-    }
-    for (y = 0; y < h; y++) {
-        memcpy(pixels + y * can_w, top + y * w, (size_t)w * 4);
-        memcpy(pixels + y * can_w + w, bottom + y * w, (size_t)w * 4);
+    if (!layout) {
+        canvas_put(top, tw, th, 0, 0, can_w, th);
+        canvas_put(bottom, bw, bh, 0, th, can_w, bh);
+    } else {
+        canvas_put(top, tw, th, 0, 0, tw, can_h);
+        canvas_put(bottom, bw, bh, tw, 0, bw, can_h);
     }
 }
 
@@ -249,7 +355,7 @@ static struct {
 static volatile int gl_on;                 /* the presenter is running */
 static HANDLE gl_event, gl_ready;
 static CRITICAL_SECTION gl_lock;
-static u32 gl_frame[DS_W * DS_H * 2 * MAXS * MAXS];
+static u32 gl_frame[CANVAS];
 static int gl_w, gl_h, gl_new;
 
 static int gl_load(void)
@@ -278,7 +384,7 @@ static DWORD WINAPI gl_thread(LPVOID unused)
     HGLRC rc = 0;
     unsigned tex;
     int tw = 0, th = 0, fmt, cw = 0, ch = 0;
-    static u32 local[DS_W * DS_H * 2 * MAXS * MAXS];
+    static u32 local[CANVAS];
     (void)unused;
     dc = G.GetDC(wnd);
     memset(&pfd, 0, sizeof pfd);
@@ -562,12 +668,12 @@ int window_open(int s)
     return 1;
 }
 
-int window_present(const u32 *top, const u32 *bottom, int w, int h)
+int window_present(const u32 *top, int tw, int th, const u32 *bottom, int bw, int bh, int w, int h)
 {
     MSG m;
     if (!wnd)
         return 1;
-    build_canvas(top, bottom, w, h);
+    build_canvas(top, tw, th, bottom, bw, bh, w, h);
     if (gl_on)
         gl_submit();
     else
@@ -846,12 +952,12 @@ int window_open(int s)
     return 1;
 }
 
-int window_present(const u32 *top, const u32 *bottom, int sw, int sh)
+int window_present(const u32 *top, int tw, int th, const u32 *bottom, int bw, int bh, int sw, int sh)
 {
     int x, y, w, h, i, j;
     if (!dpy)
         return 1;
-    build_canvas(top, bottom, sw, sh);
+    build_canvas(top, tw, th, bottom, bw, bh, sw, sh);
     while (X.XPending(dpy)) {
         XEv e;
         X.XNextEvent(dpy, &e);
