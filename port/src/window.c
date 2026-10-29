@@ -1,4 +1,5 @@
-/* The window: both DS screens, stacked or side by side (F9), scaled to the window keeping the aspect ratio, stretched
+/* The window: both DS screens, stacked, side by side or whichever fits the window's shape better (F9, the default:
+ * the layout follows the window as it is resized), scaled to the window keeping the aspect ratio, stretched
  * to fill it, or at the largest whole multiple (F10); F8 cycles the internal resolution (1-4x, NDOGS_SCALE, default
  * 2). The mouse on the bottom screen is the stylus. Keyboard: arrows = D-pad, Z = A, X = B, A = Y, S = X, Q = L,
  * W = R, Enter = Start, Shift (or Backspace) = Select, F11 = full screen (Windows). Gamepads: XInput on Windows
@@ -33,7 +34,8 @@ static int mouse_down, mouse_x, mouse_y;  /* in DS bottom-screen pixels */
 static u32 keys_down;                     /* pressed keyboard keys as KEY_ bits */
 static u32 pad_down;                      /* pressed gamepad buttons as KEY_ bits */
 static int win_w, win_h;                  /* client size */
-static int layout;                        /* 0 stacked, 1 side by side */
+static int layout;                        /* 0 stacked, 1 side by side (in use: see layout_mode) */
+static int layout_mode = 2;               /* 0 stacked, 1 side by side, 2 whichever fits the window better */
 static int aspect;                        /* 0 keep, 1 stretch, 2 whole multiples */
 static int scale_req = -1;
 static int filter_linear = 1;             /* GPU presenter: bilinear (1) or nearest (0) scaling, F7 */
@@ -41,9 +43,10 @@ static int filter_linear = 1;             /* GPU presenter: bilinear (1) or near
 int window_scale(void)
 {
     if (scale_req < 0) {
-        /* starting layout and aspect mode: NDOGS_LAYOUT=0 stacked / 1 side by side,
+        /* starting layout and aspect mode: NDOGS_LAYOUT=0 stacked / 1 side by side / 2 auto (default),
          * NDOGS_ASPECT=0 keep / 1 stretch / 2 whole multiples */
-        layout = getenv("NDOGS_LAYOUT") ? atoi(getenv("NDOGS_LAYOUT")) & 1 : 0;
+        layout_mode = getenv("NDOGS_LAYOUT") ? atoi(getenv("NDOGS_LAYOUT")) % 3 : 2;
+        layout = layout_mode == 1;
         aspect = getenv("NDOGS_ASPECT") ? atoi(getenv("NDOGS_ASPECT")) % 3 : 0;
         scale_req = getenv("NDOGS_SCALE") ? atoi(getenv("NDOGS_SCALE")) : 2;
         scale_req = scale_req < 1 ? 1 : scale_req > MAXS ? MAXS : scale_req;
@@ -59,7 +62,7 @@ static void fkey(int n)
     else if (n == 8)
         scale_req = window_scale() % MAXS + 1;
     else if (n == 9)
-        layout ^= 1;
+        layout_mode = (layout_mode + 1) % 3;
     else if (n == 10)
         aspect = (aspect + 1) % 3;
 }
@@ -101,10 +104,26 @@ static void mouse_at(int cx, int cy)
     }
 }
 
+/* the layout in use: auto picks the one that shows the screens bigger in the window (wide: side by side; tall or
+ * square: stacked), so resizing or going full screen changes it */
+static void choose_layout(void)
+{
+    if (layout_mode == 2) {
+        if (win_w > 0 && win_h > 0) {
+            /* fitted height of one screen: stacked min(W*3/4, H/2), side by side min(W*3/8, H) */
+            int stacked = win_w * 3 / 4 < win_h / 2 ? win_w * 3 / 4 : win_h / 2;
+            int side = win_w * 3 / 8 < win_h ? win_w * 3 / 8 : win_h;
+            layout = side > stacked;
+        }
+    } else
+        layout = layout_mode;
+}
+
 /* both screens (w x h each) into the canvas */
 static void build_canvas(const u32 *top, const u32 *bottom, int w, int h)
 {
     int y;
+    choose_layout();
     scr_w = w;
     scr_h = h;
     can_w = layout ? w * 2 : w;
@@ -496,6 +515,20 @@ static void poll_pad(void)
     if (st.buttons & 0x4000) k |= KEY_Y;
     if (st.buttons & 0x8000) k |= KEY_X;
     pad_down = k;
+}
+
+/* the main monitor's refresh rate (frame interpolation, video.c); 0 if unknown */
+int window_refresh_hz(void)
+{
+    DEVMODEA dm;
+    HMODULE u = LoadLibraryA("user32.dll");
+    BOOL (WINAPI *enum_settings)(LPCSTR, DWORD, DEVMODEA *) =
+        u ? (BOOL (WINAPI *)(LPCSTR, DWORD, DEVMODEA *))GetProcAddress(u, "EnumDisplaySettingsA") : 0;
+    memset(&dm, 0, sizeof dm);
+    dm.dmSize = sizeof dm;
+    if (!enum_settings || !enum_settings(0, ENUM_CURRENT_SETTINGS, &dm) || dm.dmDisplayFrequency <= 1)
+        return 0;
+    return (int)dm.dmDisplayFrequency;
 }
 
 int window_open(int s)
@@ -890,6 +923,12 @@ int window_present(const u32 *top, const u32 *bottom, int sw, int sh)
                 (unsigned)frame_h);
     X.XFlush(dpy);
     return !closed;
+}
+
+/* refresh rate unknown here: frame interpolation only with NDOGS_FPS (video.c) */
+int window_refresh_hz(void)
+{
+    return 0;
 }
 
 #endif

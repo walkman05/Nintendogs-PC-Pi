@@ -204,8 +204,27 @@ found no other case; variadic functions are safe (gcc pushes the unnamed registe
   address); video.c composes the screens at S x by taking those pixels from the hi-res 3D frame or from a hi-res
   copy of the display capture that wrote that VRAM (so the second screen's 3D is sharp too). Everything else is
   the native pixel enlarged. 2x costs ~2 ms per frame, 3x ~6 ms (at the limit on an 8-thread CPU).
-- Window: F9 stacked / side by side (`NDOGS_LAYOUT`), F10 keep aspect / stretch / whole multiples
+- Window: F9 stacked / side by side / auto (`NDOGS_LAYOUT=0/1/2`, default auto: whichever shows the screens bigger
+  in the window's shape, re-chosen as it is resized), F10 keep aspect / stretch / whole multiples
   (`NDOGS_ASPECT`), F11 full screen, F7 bilinear / nearest scaling.
+- High frame rate (video.c, gpu3d.c): the game logic stays at 60 (it counts frames); frames in between are
+  presented on a steady grid while the game waits for VBlank (hw_halt), interpolated between the last two game
+  frames, so everything is shown one game frame late. 3D: each list is also recorded before clipping (object-space
+  vertices, the projection and position matrices they used, lit colours, texture coordinates, per-BEGIN batch
+  state); the batches of consecutive lists are matched (primitive, vertex count, texture: all 545 match at Home)
+  and replayed through the normal clip/raster path with every position matrix interpolated (rotation by
+  quaternion, scale and translation linearly: bone matrices, so the dogs' skeletons; a turn over ~100 degrees is a
+  cut and snaps), the way decomp PC ports interpolate final matrices (Ship of Harkinian). 2D: registers and OAM of
+  both frames; sprites matched by identity (tile, palette, shape, size; nearest previous one, any slot: the game
+  reuses slots) move and turn, BG scroll and rotation, blend/fade levels and master brightness interpolate;
+  anything that jumped over 64 px snaps. Rate `NDOGS_FPS`, default 120 or the monitor's refresh rate if lower
+  (Windows; Linux: only with NDOGS_FPS), adapting down to what the machine manages; off while the game swaps its
+  screens every frame (3D on both screens). While interpolating, the swapped list isn't rasterised at VBlank
+  (gx_take_swapped) unless display capture needs it. Measured at Home, 2x: 120 fps presented, game 60, ~3 ms per
+  frame in between. `NDOGS_SHOT` also saves the halfway frame (shot_1<frame>); `NDOGS_ILOG=1` per-frame costs.
+- The renderers (gpu2d/gpu3d/video/window.c) build with SSE2 floating point on 32-bit x86 (x87 float-to-int
+  conversions made the rasteriser ~4x slower); only polygon-edge pixels round differently (<0.15% of a frame).
+- Faults also write their report to crash.txt next to the exe (double-clicked games have no console).
 - Presenting (Windows): an OpenGL 1.1 presenter thread (opengl32.dll loaded at run time) uploads each finished
   canvas as a texture and swaps with vsync; the game thread only copies the frame, so the monitor never delays
   the game. `NDOGS_GL=0` uses GDI instead, `NDOGS_VSYNC=0` turns vsync off. Linux still uses XPutImage.

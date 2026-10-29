@@ -7,6 +7,7 @@
  * and rasterisation use float. Not modelled: anti-aliasing, the rear-plane bitmap, 1-dot polygon culling, line
  * (zero-area) polygons, exact hardware edge/interpolation precision, polygon/vertex RAM overflow beyond 2048
  * polygons. */
+#include <math.h>
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -61,6 +62,32 @@ static int g_prim, g_in_begin;
 static vtx_t g_vbuf[4];
 static int g_nv, g_strip_odd;
 
+/* ---- frame interpolation: recording ------------------------------------------------------------------------------
+ * For high frame rate output (see gx_render_interp) each list is also recorded before clipping: per vertex its
+ * object-space position, the matrices it was transformed with (projection and position, i.e. the camera and the
+ * model or skeleton bone), its lit colour and texture coordinates; per BEGIN_VTXS batch the polygon state. Two
+ * consecutive lists are matched batch by batch and replayed with every matrix interpolated (rotation by quaternion,
+ * scale and translation linearly), the way decomp PC ports interpolate their final matrices; the dogs are skinned
+ * by restoring a bone matrix per vertex group, so this is skeletal interpolation. */
+#define REC_V 16384
+#define REC_B 4096
+#define REC_M 4096
+typedef struct { s32 x, y, z, s, t; u32 tex, pal; u16 m; u8 r, g, b; } rvtx_t;
+typedef struct { u32 attr; int prim, first, n, vp[4]; } rbat_t;
+typedef struct { float proj[16], pos[16]; } rmtx_t;
+typedef struct {
+    int nv, nb, nm, bad;
+    u32 swapflags;
+    double time;
+    rvtx_t v[REC_V];
+    rbat_t b[REC_B];
+    rmtx_t m[REC_M];
+} rec_t;
+static rec_t g_rec[4];
+static int r_fill, r_swapped = -1, r_cur = -1, r_prev = -1;  /* being filled, swapped (not shown yet), shown, before */
+static int g_rec_mnew = 1;                                   /* the clip matrix changed since the last recorded one */
+static plist_t *g_emit;                                      /* replay target (0: the list being filled) */
+
 static int g_box_result;
 static s32 g_pos_result[4];
 static s16 g_vec_result[3];
@@ -104,6 +131,7 @@ static void update_clip(void)
     memcpy(m_clip, m_proj, sizeof(m_clip));
     mtx_mul(m_clip, m_pos);
     g_clip_dirty = 0;
+    g_rec_mnew = 1;
 }
 
 static void xform4(const s32 *m, s32 x, s32 y, s32 z, s32 *out)
@@ -308,7 +336,7 @@ static void emit_poly(const vtx_t *src, int n)
 {
     vtx_t b0[MAX_PV + 4], b1[MAX_PV + 4];
     vtx_t *in = b0, *out = b1, *t;
-    plist_t *L = &g_list[g_cur];
+    plist_t *L = g_emit ? g_emit : &g_list[g_cur];
     poly_t *p;
     int i, need_clip = 0, far = 0, fmt;
     float area = 0, ymin = 1e9f, ymax = -1e9f;
@@ -395,36 +423,14 @@ static void emit_poly(const vtx_t *src, int n)
         p->translucent = (alpha > 0 && alpha < 31) || fmt == 1 || fmt == 6 || ((attr >> 4) & 3) == 3;
     }
     L->npoly++;
-    g_vtx_count += n;
+    if (!g_emit)
+        g_vtx_count += n;  /* RAM_COUNT: not for replayed lists */
 }
 
-static void add_vertex(s32 x, s32 y, s32 z)
+/* primitive assembly: one vertex into the current BEGIN_VTXS primitive */
+static void assemble(const vtx_t *nv)
 {
-    s32 c[4];
-    vtx_t *v;
-    g_vx = x;
-    g_vy = y;
-    g_vz = z;
-    update_clip();
-    xform4(m_clip, x, y, z, c);
-    if ((g_teximage >> 30) == 3) {
-        g_s = g_s0 + (s32)(((s64)x * m_tex[0] + (s64)y * m_tex[4] + (s64)z * m_tex[8]) >> 24);
-        g_t = g_t0 + (s32)(((s64)x * m_tex[1] + (s64)y * m_tex[5] + (s64)z * m_tex[9]) >> 24);
-    }
-    if (!g_in_begin)
-        return;
-    st_vtx++;
-    v = &g_vbuf[g_nv++];
-    v->f[VX] = (float)c[0];
-    v->f[VY] = (float)c[1];
-    v->f[VZ] = (float)c[2];
-    v->f[VW] = (float)c[3];
-    v->f[VR] = (float)g_cr;
-    v->f[VG] = (float)g_cg;
-    v->f[VB] = (float)g_cb;
-    v->f[VS] = (float)g_s;
-    v->f[VT] = (float)g_t;
-
+    g_vbuf[g_nv++] = *nv;
     switch (g_prim) {
     case 0: /* triangles */
         if (g_nv == 3) { emit_poly(g_vbuf, 3); g_nv = 0; }
@@ -457,6 +463,79 @@ static void add_vertex(s32 x, s32 y, s32 z)
         }
         break;
     }
+}
+
+/* record a vertex of the list being filled (see g_rec) */
+static void rec_vertex(s32 x, s32 y, s32 z)
+{
+    rec_t *R = &g_rec[r_fill];
+    rvtx_t *v;
+    int i;
+    if (R->bad)
+        return;
+    if (g_rec_mnew) {
+        rmtx_t *m;
+        if (R->nm >= REC_M) { R->bad = 1; return; }
+        m = &R->m[R->nm++];
+        for (i = 0; i < 16; i++) {
+            m->proj[i] = (float)m_proj[i];
+            m->pos[i] = (float)m_pos[i];
+        }
+        g_rec_mnew = 0;
+    }
+    if (R->nv >= REC_V || R->nb == 0) { R->bad = 1; return; }
+    v = &R->v[R->nv++];
+    v->x = x; v->y = y; v->z = z;
+    v->s = g_s; v->t = g_t;
+    v->tex = g_teximage; v->pal = g_pltt;
+    v->m = (u16)(R->nm - 1);
+    v->r = (u8)g_cr; v->g = (u8)g_cg; v->b = (u8)g_cb;
+    R->b[R->nb - 1].n++;
+}
+
+static void rec_begin(void)
+{
+    rec_t *R = &g_rec[r_fill];
+    rbat_t *b;
+    if (R->bad)
+        return;
+    if (R->nb >= REC_B) { R->bad = 1; return; }
+    b = &R->b[R->nb++];
+    b->attr = g_attr;
+    b->prim = g_prim;
+    b->first = R->nv;
+    b->n = 0;
+    b->vp[0] = g_vp_x1; b->vp[1] = g_vp_y1; b->vp[2] = g_vp_w; b->vp[3] = g_vp_h;
+}
+
+static void add_vertex(s32 x, s32 y, s32 z)
+{
+    s32 c[4];
+    vtx_t *v, nv;
+    g_vx = x;
+    g_vy = y;
+    g_vz = z;
+    update_clip();
+    xform4(m_clip, x, y, z, c);
+    if ((g_teximage >> 30) == 3) {
+        g_s = g_s0 + (s32)(((s64)x * m_tex[0] + (s64)y * m_tex[4] + (s64)z * m_tex[8]) >> 24);
+        g_t = g_t0 + (s32)(((s64)x * m_tex[1] + (s64)y * m_tex[5] + (s64)z * m_tex[9]) >> 24);
+    }
+    if (!g_in_begin)
+        return;
+    st_vtx++;
+    rec_vertex(x, y, z);
+    v = &nv;
+    v->f[VX] = (float)c[0];
+    v->f[VY] = (float)c[1];
+    v->f[VZ] = (float)c[2];
+    v->f[VW] = (float)c[3];
+    v->f[VR] = (float)g_cr;
+    v->f[VG] = (float)g_cg;
+    v->f[VB] = (float)g_cb;
+    v->f[VS] = (float)g_s;
+    v->f[VT] = (float)g_t;
+    assemble(v);
 }
 
 static void tex_mode1(void)
@@ -532,6 +611,13 @@ static void do_swap(u32 p)
     g_list[g_cur].npoly = 0;
     g_vtx_count = 0;
     g_swap_pending = 1;
+    /* the recording goes with the list: swapped now, shown at VBlank (gx_render_swapped); start a free one */
+    g_rec[r_fill].swapflags = p & 3;
+    r_swapped = r_fill;
+    for (r_fill = 0; r_fill == r_swapped || r_fill == r_cur || r_fill == r_prev; r_fill++)
+        ;
+    g_rec[r_fill].nv = g_rec[r_fill].nb = g_rec[r_fill].nm = g_rec[r_fill].bad = 0;
+    g_rec_mnew = 1;
 }
 
 static void exec_cmd(int cmd, const u32 *p)
@@ -658,6 +744,7 @@ static void exec_cmd(int cmd, const u32 *p)
         g_in_begin = 1;
         g_nv = 0;
         g_strip_odd = 0;
+        rec_begin();
         break;
     case 0x41: break; /* END_VTXS: no effect on hardware */
     case 0x50: do_swap(p[0]); break;
@@ -813,6 +900,10 @@ void gx_init(void)
     g_cur = 0;
     g_swap_pending = 0;
     g_vtx_count = 0;
+    r_fill = 0;
+    r_swapped = r_cur = r_prev = -1;
+    g_rec[0].nv = g_rec[0].nb = g_rec[0].nm = g_rec[0].bad = 0;
+    g_rec_mnew = 1;
 }
 
 /* ---- rendering engine ---------------------------------------------------------------------------------------- */
@@ -940,6 +1031,7 @@ typedef struct {
 
 
 #define NA 7 /* interpolated: 1/w, z, r/w, g/w, b/w, s/w, t/w */
+static unsigned g_frags[64];
 
 /* rasterise one polygon into the rows [by0, by1) of the RW x RH buffers; *shadow_drawn: a non-mask shadow polygon
  * was drawn in this band since its stencil was last cleared */
@@ -1047,6 +1139,7 @@ static void raster_poly(const poly_t *p, const rctx_t *rc, int by0, int by1, int
             x0 = 0;
         }
         if (x1 > RW) x1 = RW;
+        g_frags[by0 & 63] += x1 - x0;
         for (x = x0; x < x1; x++, ({ for (k = 0; k < NA; k++) cur[k] += st[k]; })) {
             int idx = y * RW + x;
             float w = 1.0f / cur[0];
@@ -1325,10 +1418,9 @@ void gx_set_scale(int sc)
 int gx_scale(void) { return g_scale; }
 const u32 *gx_hires(void) { return g_hires; }
 
-void gx_render_swapped(const u8 *io, u32 *out)
+static void render_list(const plist_t *L, const u8 *io, u32 *out, int flatten)
 {
     static int order[MAX_POLY];
-    const plist_t *L = &g_list[g_cur ^ 1];
     rctx_t rc;
     u32 clr = io32(io, 0x350), cdepth = (io16(io, 0x354) & 0x7fff) * 0x200 + 0x1ff;
     u32 cc;
@@ -1346,8 +1438,10 @@ void gx_render_swapped(const u8 *io, u32 *out)
 
     double tp0 = now_ms(), tp1, tp2;
     static RenderJob rj;
-    vram_flatten(VRAM_TEX, tex_mem, sizeof tex_mem);
-    vram_flatten(VRAM_TEXPAL, texpal_mem, 0x18000);
+    if (flatten) {  /* interpolated frames reuse the textures of the list's VBlank */
+        vram_flatten(VRAM_TEX, tex_mem, sizeof tex_mem);
+        vram_flatten(VRAM_TEXPAL, texpal_mem, 0x18000);
+    }
 
     /* opaque polygons first (Y-sorted), then translucent (Y-sorted unless manual sort) */
     g_sort_polys = L->poly;
@@ -1376,12 +1470,274 @@ void gx_render_swapped(const u8 *io, u32 *out)
     if (rj.bands > RH)
         rj.bands = RH;
     tp1 = now_ms();
+    memset(g_frags, 0, sizeof g_frags);
     workers_run(rj.bands, raster_band, &rj);   /* rear plane + polygons */
+    double tpf = now_ms();
     workers_run(rj.bands, finish_band, &rj);   /* edge marking, fog, output */
+    double tpd = now_ms();
     downsample(out);
     tp2 = now_ms();
-    if (getenv("NDOGS_VLOG"))
-        fprintf(stderr, "3d: %d polys (%d translucent), setup %.2fms raster %.2fms at %dx\n", n, ntr, tp1 - tp0,
-                tp2 - tp1, g_scale);
+    if (getenv("NDOGS_VLOG")) {
+        unsigned fr = 0;
+        for (i = 0; i < 64; i++)
+            fr += g_frags[i];
+        fprintf(stderr, "3d: %d polys (%d translucent), setup %.2fms raster %.2fms at %dx (polys %.2f finish %.2f "
+                "down %.2f, %u fragments)\n", n, ntr, tp1 - tp0, tp2 - tp1, g_scale, tpf - tp1, tpd - tpf, tp2 - tpd, fr);
+    }
+}
+
+static int r_match[REC_B];  /* r_cur batch -> matching r_prev batch, or -1 */
+
+/* pair the batches of the shown list with the previous one's: same primitive type, vertex count and texture,
+ * in order (a batch may be missing or added: searched a little ahead) */
+static void match_batches(void)
+{
+    const rec_t *C = &g_rec[r_cur], *P = &g_rec[r_prev];
+    int i, j = 0, k;
+    for (i = 0; i < C->nb; i++) {
+        const rbat_t *b = &C->b[i];
+        r_match[i] = -1;
+        for (k = j; k < P->nb && k < j + 32; k++) {
+            const rbat_t *a = &P->b[k];
+            if (a->prim == b->prim && a->n == b->n &&
+                (!b->n || P->v[a->first].tex == C->v[b->first].tex)) {
+                r_match[i] = k;
+                j = k + 1;
+                break;
+            }
+        }
+    }
+}
+
+static void rec_rotate(void)
+{
+    if (r_swapped < 0)
+        return;
+    r_prev = r_cur;
+    r_cur = r_swapped;
+    r_swapped = -1;
+    g_rec[r_cur].time = now_ms();
+    if (r_prev >= 0 && !g_rec[r_cur].bad && !g_rec[r_prev].bad)
+        match_batches();
+}
+
+void gx_render_swapped(const u8 *io, u32 *out)
+{
+    render_list(&g_list[g_cur ^ 1], io, out, 1);
     g_swap_pending = 0;
+    rec_rotate();
+}
+
+/* VBlank with frame interpolation: every frame presented will be an interpolated one (gx_render_interp), so the
+ * swapped list itself needn't be rasterised (half the work), only its textures taken. Rasterised as usual (0) if
+ * it can't be interpolated with the one before. */
+int gx_take_swapped(const u8 *io, u32 *out)
+{
+    if (r_swapped >= 0 && r_cur >= 0 && !g_rec[r_swapped].bad && !g_rec[r_cur].bad &&
+        now_ms() - g_rec[r_cur].time < 50.0) {
+        vram_flatten(VRAM_TEX, tex_mem, sizeof tex_mem);
+        vram_flatten(VRAM_TEXPAL, texpal_mem, 0x18000);
+        g_swap_pending = 0;
+        rec_rotate();
+        return 1;
+    }
+    gx_render_swapped(io, out);
+    return 0;
+}
+
+/* ---- frame interpolation: replay ---------------------------------------------------------------------------- */
+/* row-vector 4x4 matrices as recorded (raw 20.12 values as float): rows 0-2 the basis, row 3 the translation */
+static void quat_from_rows(const float r[3][3], float *q)
+{
+    float tr = r[0][0] + r[1][1] + r[2][2], s;
+    if (tr > 0) {
+        s = sqrtf(tr + 1.0f) * 2;
+        q[0] = 0.25f * s; q[1] = (r[1][2] - r[2][1]) / s; q[2] = (r[2][0] - r[0][2]) / s; q[3] = (r[0][1] - r[1][0]) / s;
+    } else if (r[0][0] > r[1][1] && r[0][0] > r[2][2]) {
+        s = sqrtf(1.0f + r[0][0] - r[1][1] - r[2][2]) * 2;
+        q[0] = (r[1][2] - r[2][1]) / s; q[1] = 0.25f * s; q[2] = (r[1][0] + r[0][1]) / s; q[3] = (r[2][0] + r[0][2]) / s;
+    } else if (r[1][1] > r[2][2]) {
+        s = sqrtf(1.0f + r[1][1] - r[0][0] - r[2][2]) * 2;
+        q[0] = (r[2][0] - r[0][2]) / s; q[1] = (r[1][0] + r[0][1]) / s; q[2] = 0.25f * s; q[3] = (r[2][1] + r[1][2]) / s;
+    } else {
+        s = sqrtf(1.0f + r[2][2] - r[0][0] - r[1][1]) * 2;
+        q[0] = (r[0][1] - r[1][0]) / s; q[1] = (r[2][0] + r[0][2]) / s; q[2] = (r[2][1] + r[1][2]) / s; q[3] = 0.25f * s;
+    }
+}
+
+static void rows_from_quat(const float *q, float r[3][3])
+{
+    float w = q[0], x = q[1], y = q[2], z = q[3];
+    r[0][0] = 1 - 2 * (y * y + z * z); r[0][1] = 2 * (x * y + w * z);     r[0][2] = 2 * (x * z - w * y);
+    r[1][0] = 2 * (x * y - w * z);     r[1][1] = 1 - 2 * (x * x + z * z); r[1][2] = 2 * (y * z + w * x);
+    r[2][0] = 2 * (x * z + w * y);     r[2][1] = 2 * (y * z - w * x);     r[2][2] = 1 - 2 * (x * x + y * y);
+}
+
+/* split a matrix's basis into scales and a rotation; 0 if it isn't one (degenerate or mirrored) */
+static int decompose(const float *m, float sc[3], float r[3][3])
+{
+    int i, j;
+    float det;
+    for (i = 0; i < 3; i++) {
+        sc[i] = sqrtf(m[i * 4] * m[i * 4] + m[i * 4 + 1] * m[i * 4 + 1] + m[i * 4 + 2] * m[i * 4 + 2]);
+        if (sc[i] < 1e-3f)
+            return 0;
+        for (j = 0; j < 3; j++)
+            r[i][j] = m[i * 4 + j] / sc[i];
+    }
+    det = r[0][0] * (r[1][1] * r[2][2] - r[1][2] * r[2][1]) - r[0][1] * (r[1][0] * r[2][2] - r[1][2] * r[2][0]) +
+          r[0][2] * (r[1][0] * r[2][1] - r[1][1] * r[2][0]);
+    return det > 0.5f;
+}
+
+/* interpolate a position matrix: rotation along the shorter arc (a turn of over ~100 degrees in one frame is a cut:
+ * snap to the new one), scale and translation linearly; other matrices element by element */
+static void mtx_interp(const float *a, const float *b, float t, float *o)
+{
+    float sa[3], sb[3], ra[3][3], rb[3][3], qa[4], qb[4], q[4], d = 0, len = 0, r[3][3];
+    int i, j;
+    if (!decompose(a, sa, ra) || !decompose(b, sb, rb)) {
+        for (i = 0; i < 16; i++)
+            o[i] = a[i] + (b[i] - a[i]) * t;
+        return;
+    }
+    quat_from_rows(ra, qa);
+    quat_from_rows(rb, qb);
+    for (i = 0; i < 4; i++)
+        d += qa[i] * qb[i];
+    if (d < 0) {
+        d = -d;
+        for (i = 0; i < 4; i++)
+            qa[i] = -qa[i];
+    }
+    if (d < 0.64f) {  /* cos(50 degrees): half the angle */
+        memcpy(o, b, 64);
+        return;
+    }
+    for (i = 0; i < 4; i++) {
+        q[i] = qa[i] + (qb[i] - qa[i]) * t;  /* nlerp: equal to slerp for the small angles between frames */
+        len += q[i] * q[i];
+    }
+    len = 1.0f / sqrtf(len);
+    for (i = 0; i < 4; i++)
+        q[i] *= len;
+    rows_from_quat(q, r);
+    for (i = 0; i < 3; i++) {
+        float s = sa[i] + (sb[i] - sa[i]) * t;
+        for (j = 0; j < 3; j++)
+            o[i * 4 + j] = r[i][j] * s;
+        o[i * 4 + 3] = a[i * 4 + 3] + (b[i * 4 + 3] - a[i * 4 + 3]) * t;
+    }
+    for (j = 0; j < 4; j++)
+        o[12 + j] = a[12 + j] + (b[12 + j] - a[12 + j]) * t;
+}
+
+/* clip matrix = position matrix x projection, both interpolated */
+static void clip_interp(const rmtx_t *a, const rmtx_t *b, float t, float *c)
+{
+    float pos[16], proj[16];
+    int i, j;
+    mtx_interp(a->pos, b->pos, t, pos);
+    for (i = 0; i < 16; i++)
+        proj[i] = a->proj[i] + (b->proj[i] - a->proj[i]) * t;
+    for (i = 0; i < 4; i++)
+        for (j = 0; j < 4; j++)
+            c[i * 4 + j] = (pos[i * 4] * proj[j] + pos[i * 4 + 1] * proj[4 + j] + pos[i * 4 + 2] * proj[8 + j] +
+                            pos[i * 4 + 3] * proj[12 + j]) / 4096.0f;
+}
+
+/* Interpolation position at time <now>: 0 = the previous list, 1 = the shown one, which arrived one frame after
+ * it; -1 if there is nothing to interpolate (no pair, a gap of over 3 frames, or a list that overflowed the
+ * recording). Showing the previous-to-shown motion delays the 3D by one game frame, as in other ports. */
+float gx_interp_pos(double now)
+{
+    double span;
+    if (r_cur < 0 || r_prev < 0 || g_rec[r_cur].bad || g_rec[r_prev].bad)
+        return -1;
+    span = g_rec[r_cur].time - g_rec[r_prev].time;
+    if (span <= 0 || span > 50.0)
+        return -1;
+    now = (now - g_rec[r_cur].time) / span;
+    return now < 0 ? 0.0f : now > 1 ? 1.0f : (float)now;
+}
+
+/* Render the shown list's 3D frame as it would be at <t> (gx_interp_pos) into out and gx_hires(). 0 (nothing
+ * rendered) if there is no pair. */
+int gx_render_interp(const u8 *io, float t, u32 *out)
+{
+    static plist_t L;
+    static float cm[REC_M][16];
+    static int cm_prev[REC_M];
+    const rec_t *C, *P;
+    vtx_t v;
+    int i, k, attr_save = g_attr, prim_save = g_prim, nv_save = g_nv, odd_save = g_strip_odd;
+    int vp_save[4] = { g_vp_x1, g_vp_y1, g_vp_w, g_vp_h };
+    u32 tex_save = g_teximage, pal_save = g_pltt;
+    vtx_t vbuf_save[4];
+    double t0 = now_ms(), tr;
+    if (t < 0 || r_cur < 0 || r_prev < 0)
+        return 0;
+    C = &g_rec[r_cur];
+    P = &g_rec[r_prev];
+    memcpy(vbuf_save, g_vbuf, sizeof vbuf_save);
+    for (i = 0; i < C->nm; i++)
+        cm_prev[i] = -2;  /* clip matrix for C's matrix i not computed yet */
+    L.npoly = 0;
+    L.swapflags = C->swapflags;
+    g_emit = &L;
+    for (k = 0; k < C->nb; k++) {
+        const rbat_t *b = &C->b[k];
+        const rbat_t *a = r_match[k] >= 0 ? &P->b[r_match[k]] : 0;
+        g_attr = b->attr;
+        g_prim = b->prim;
+        g_vp_x1 = b->vp[0]; g_vp_y1 = b->vp[1]; g_vp_w = b->vp[2]; g_vp_h = b->vp[3];
+        g_nv = 0;
+        g_strip_odd = 0;
+        for (i = 0; i < b->n; i++) {
+            const rvtx_t *cv = &C->v[b->first + i], *pv = a ? &P->v[a->first + i] : cv;
+            float x, y, z, *m, tt = a ? t : 1.0f;
+            int j;
+            if (cm_prev[cv->m] != (a ? pv->m : -1)) {  /* the matrix pair (cached: bones repeat) */
+                cm_prev[cv->m] = a ? pv->m : -1;
+                if (a)
+                    clip_interp(&P->m[pv->m], &C->m[cv->m], t, cm[cv->m]);
+                else
+                    clip_interp(&C->m[cv->m], &C->m[cv->m], 1.0f, cm[cv->m]);
+            }
+            m = cm[cv->m];
+            x = pv->x + (cv->x - pv->x) * tt;
+            y = pv->y + (cv->y - pv->y) * tt;
+            z = pv->z + (cv->z - pv->z) * tt;
+            for (j = 0; j < 4; j++)
+                v.f[VX + j] = (x * m[j] + y * m[4 + j] + z * m[8 + j]) / 4096.0f + m[12 + j];
+            v.f[VR] = pv->r + (cv->r - pv->r) * tt;
+            v.f[VG] = pv->g + (cv->g - pv->g) * tt;
+            v.f[VB] = pv->b + (cv->b - pv->b) * tt;
+            if (abs(cv->s - pv->s) < 4096 && abs(cv->t - pv->t) < 4096) {  /* not across a texture wrap */
+                v.f[VS] = pv->s + (cv->s - pv->s) * tt;
+                v.f[VT] = pv->t + (cv->t - pv->t) * tt;
+            } else {
+                v.f[VS] = (float)cv->s;
+                v.f[VT] = (float)cv->t;
+            }
+            g_teximage = cv->tex;
+            g_pltt = cv->pal;
+            assemble(&v);
+        }
+    }
+    g_emit = 0;
+    g_attr = attr_save; g_prim = prim_save; g_nv = nv_save; g_strip_odd = odd_save;
+    g_vp_x1 = vp_save[0]; g_vp_y1 = vp_save[1]; g_vp_w = vp_save[2]; g_vp_h = vp_save[3];
+    g_teximage = tex_save; g_pltt = pal_save;
+    memcpy(g_vbuf, vbuf_save, sizeof vbuf_save);
+    tr = now_ms();
+    render_list(&L, io, out, 0);
+    if (getenv("NDOGS_ILOG")) {
+        int matched = 0;
+        for (k = 0; k < C->nb; k++)
+            matched += r_match[k] >= 0;
+        fprintf(stderr, "interp: replay %.2fms raster %.2fms, %d polys, %d/%d batches matched, %d matrices\n",
+                tr - t0, now_ms() - tr, L.npoly, matched, C->nb, C->nm);
+    }
+    return 1;
 }

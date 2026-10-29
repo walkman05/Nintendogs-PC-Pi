@@ -15,6 +15,9 @@ FLAGS = ['-m32', '-std=gnu99', '-g1', '-fno-omit-frame-pointer', '-fwrapv', '-fn
 GAME_OPT = os.environ.get('NDOGS_OPT', '-O0')
 FAST_SRC = ('gpu2d.c', 'gpu3d.c', 'video.c', 'vram.c', 'window.c', 'audio.c', 'snd.c', 'workers.c', 'setup.c',
             'hw.c', 'hw_trap.c', 'hw_card.c', 'host_cpu.c', 'host_link.c', 'platform_mem.c')
+# the renderers' float code on 32-bit x86 uses SSE2, not the x87 default (x87 float-to-int conversions are slow, and
+# the rasteriser does several per pixel); the game code keeps the defaults
+SSE_SRC = ('gpu2d.c', 'gpu3d.c', 'video.c', 'window.c')
 FLAGS += os.environ.get('NDOGS_CFLAGS', '').split()  # extra flags, e.g. sanitizer checks for a test build
 DATA_RE = re.compile(r'\b(?:data|bss)_(?:ov[0-9]+_)?([0-9a-f]{8})(?:__\d+)?\b')
 OBJDIR = None
@@ -201,7 +204,7 @@ def link(cc, objs, out):
         f.write('\n'.join([o.replace('\\', '/') for o in objs] + ['-Wl,--wrap=' + w for w in wrap]))
     # fixed load address (no ASLR): keeps the program clear of the DS address range and makes the map usable
     flags = ARCH + ['-Wl,-Map=' + out + '.map'] + (['-Wl,--disable-dynamicbase', '-Wl,--image-base=0x10000000'] if win else ['-no-pie', '-Wl,-Ttext-segment=0x10000000'])
-    libs = [] if win else ['-ldl', '-lpthread']  # dlopen (ALSA, X11), worker threads
+    libs = [] if win else ['-ldl', '-lpthread', '-lm']  # dlopen (ALSA, X11), worker threads, frame interpolation
     r = subprocess.run([cc] + flags + ['@' + rsp, script, '-o', out] + libs,
                        capture_output=True, text=True)
     undef = sorted(set(re.findall(r"undefined reference to `([^']+)'", r.stderr)))
@@ -275,12 +278,12 @@ def main():
             extras += [os.path.join(hf, x) for x in sorted(os.listdir(hf)) if x.endswith('.c')]
             for src in extras:
                 o = os.path.join(OBJDIR, 'port_' + os.path.basename(src)[:-2] + SFX + '.o')
-                opt = '-O2' if os.path.basename(src) in FAST_SRC else GAME_OPT
+                opt = ['-O2' if os.path.basename(src) in FAST_SRC else GAME_OPT]
+                if ARCH == ['-m32'] and os.path.basename(src) in SSE_SRC:
+                    opt += ['-msse2', '-mfpmath=sse']
                 if os.path.basename(src) == 'main.c':  # fallback data folder when started without --data (double-click)
                     data = os.path.join(ROOT, 'extracted', *(['retail'] if TARGET == 'retail' else []))
-                    opt = [opt, '-DNDOGS_DEFAULT_DATA="%s"' % data.replace('\\', '/')]
-                else:
-                    opt = [opt]
+                    opt.append('-DNDOGS_DEFAULT_DATA="%s"' % data.replace('\\', '/'))
                 if TARGET == 'retail':
                     opt.append('-DNDOGS_RETAIL=1')
                 r = subprocess.run([args.cc] + FLAGS + opt + ['-c', src, '-o', o], capture_output=True, text=True)

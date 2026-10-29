@@ -53,6 +53,7 @@ void gpu2d_render(int engine, const u8 *io, const u32 *frame3d, u32 *out);
 extern u32 gpu2d_src[2][DS_W * DS_H];       /* per-pixel source of the last render (see gpu2d.c) */
 u32 gpu2d_bright_pixel(int engine, const u8 *io, u32 c);  /* master brightness for one pixel */
 extern int gpu2d_no_brightness;             /* render without master brightness (capture source) */
+extern const u16 *gpu2d_oam;                 /* OAM to render from instead of 0x07000000 (both engines), or 0 */
 void gpu2d_brightness(int engine, const u8 *io, u32 *out);
 void hw_capture_done(void);                 /* clears DISPCAPCNT's enable bit once a capture has been taken */
 
@@ -65,6 +66,9 @@ void hw_capture_done(void);                 /* clears DISPCAPCNT's enable bit on
  * (matrix stack levels, busy = 0). */
 void gx_command(u32 port, u32 value);
 void gx_render_swapped(const u8 *io, u32 *out);
+float gx_interp_pos(double now);                      /* frame interpolation (gpu3d.c): position at a time, -1 none */
+int gx_render_interp(const u8 *io, float t, u32 *out); /* the shown list interpolated from the previous one */
+int gx_take_swapped(const u8 *io, u32 *out);           /* gx_render_swapped, skipping the raster if interpolated */
 int gx_swap_pending(void);
 void gx_set_scale(int s);      /* internal 3D resolution: 1-4 times 256x192 */
 int gx_scale(void);

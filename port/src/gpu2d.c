@@ -28,7 +28,11 @@ static u32 bgsrc[4][DS_W];
 /* palette RAM and OAM are plain memory at their DS addresses (mapped by platform_mem.c) */
 static const u16 *pal_bg(int engine) { return (const u16 *)(0x05000000u + (u32)engine * 0x400u); }
 static const u16 *pal_obj(int engine) { return (const u16 *)(0x05000200u + (u32)engine * 0x400u); }
-static const u16 *oam_base(int engine) { return (const u16 *)(0x07000000u + (u32)engine * 0x400u); }
+const u16 *gpu2d_oam;  /* if set, OAM of both engines read from here (interpolated frames, video.c) */
+static const u16 *oam_base(int engine)
+{
+    return gpu2d_oam ? gpu2d_oam + engine * 0x200 : (const u16 *)(0x07000000u + (u32)engine * 0x400u);
+}
 
 static u32 s_c15to24[32768];
 static int s_lut_ready;

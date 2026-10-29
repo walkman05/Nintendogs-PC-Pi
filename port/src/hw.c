@@ -845,6 +845,19 @@ void hw_halt(void)
         fprintf(stderr, "busy %.1fms (from the frame start) traps %u\n", t - frame_wall, hw_trap_count - last_traps);
         last_traps = hw_trap_count;
     }
+    if (!hw_in_exception()) {  /* high frame rate: frames in between while the game waits (video.c) */
+        extern double video_next_present(double deadline);
+        extern void video_present_interp(void);
+        double np;
+        /* a frame may end a little after the VBlank time: the schedule catches up (next_frame) */
+        while ((np = video_next_present(next_vblank + 3.0)) > 0) {
+            t = now_ms();
+            if (np > t)
+                sleep_ms(np - t);
+            video_present_interp();
+        }
+        t = now_ms();
+    }
     if (next_vblank > t)
         sleep_ms(next_vblank - t);
     next_frame(now_ms());
