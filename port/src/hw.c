@@ -849,8 +849,8 @@ void hw_halt(void)
         extern double video_next_present(double deadline);
         extern void video_present_interp(void);
         double np;
-        /* a frame may end a little after the VBlank time: the schedule catches up (next_frame) */
-        while ((np = video_next_present(next_vblank + 3.0)) > 0) {
+        /* a frame may start up to the VBlank time and end after it: the schedule catches up (next_frame) */
+        while ((np = video_next_present(next_vblank)) > 0) {
             t = now_ms();
             if (np > t)
                 sleep_ms(np - t);

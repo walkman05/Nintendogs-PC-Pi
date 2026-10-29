@@ -182,6 +182,11 @@ finds these from the original asm (registers read before written, or forwarded t
 10 more it found are fixed (the dog material colour setters among them). What it still lists was reviewed and is
 harmless: func_0204160c/02062700/020627c0/020636d0 take a 64-bit argument (two registers), and
 func_0208cc2c/0208cdfc/0208db60/020fdb24 leave don't-care registers for callees called in loops.
+The G3 matrix helpers func_0206a088 (MTX_MULT_3x3), func_0206a0a4 (MTX_MULT_4x3) and func_0206a0c0 (MTX_LOAD_4x3)
+write the command to 0x04000400 and call a copy routine (func_0206c8b8 / func_0206be70) with the FIFO address left
+in r1, which the C dropped (argscan missed them: the calls go through function pointers): on the PC the matrix was
+copied to a stale stack value, once the copy routine's own address (a crash in Home). They pass 0x04000400 under
+NDOGS_PC now, like port/hostfuncs/func_0206be94.c (MTX_LOAD_4x4).
 ARM-only hazard: reading adjacent parameters through one parameter's address (`*(P2 *)&b`). x86 stack
 arguments are in order, but ARM gcc spills r0-r3 downwards, so `&b + 1` is the previous parameter. func_0208c98c
 forwarded the dog model's file object as the file id (dogs moved without skeletal animation on the Pi); it now
@@ -200,14 +205,16 @@ found no other case; variadic functions are safe (gcc pushes the unnamed registe
   Linux via dlopen (not yet run on Linux). `NDOGS_SNDLOG=1` logs sound commands.
 - Internal resolution (`NDOGS_SCALE=1-4`, default auto, F8 cycles auto/1-4: the smallest whole multiple of the
   DS screen that covers its size in the window, up to 4x, 2x on ARM, so the presenter only scales down a little:
-  sharp, not blurry): gpu3d rasterises at 256S x 192S in parallel
+  sharp, not blurry; lowered a step while the game can't keep 60 (more than 12 of 60 frames over 20 ms, after
+  interpolation was turned off first: window_slow), raised again after 10 s at full speed or on a resize
+  (window_fast)): gpu3d rasterises at 256S x 192S in parallel
   scanline bands (`port/src/workers.c`, `NDOGS_THREADS`), plus a downsampled native frame for the 2D engines.
   gpu2d records each pixel's source (`gpu2d_src`: unchanged 3D, or a 1:1 direct-colour bitmap pixel with its VRAM
   address); video.c composes the screens at S x by taking those pixels from the hi-res 3D frame or from a hi-res
   copy of the display capture that wrote that VRAM (so the second screen's 3D is sharp too). Everything else is
   the native pixel enlarged. 2x costs ~2 ms per frame, 3x ~6 ms (at the limit on an 8-thread CPU).
-- Window: F9 stacked / side by side / auto (`NDOGS_LAYOUT=0/1/2`, default auto: whichever fills more of the window,
-  counting the view below, re-chosen as it is resized), F10 keep aspect / stretch / whole multiples
+- Window (maximisable): F9 stacked / side by side / auto (`NDOGS_LAYOUT=0/1/2`, default stacked; auto: whichever
+  fills more of the window, counting the view below, re-chosen as it is resized), F10 keep aspect / stretch / whole multiples
   (`NDOGS_ASPECT`), F11 full screen, F7 bilinear / nearest scaling.
 - Dynamic view (keeping the aspect; `NDOGS_WIDE=0` off, `=<w>[,<h>]` fixed): the screen with the 3D is shown wider
   or taller to fill the window (window_view: stacked in a wide window: wider; side by side in a 16:9 one: taller),
@@ -216,7 +223,10 @@ found no other case; variadic functions are safe (gcc pushes the unnamed registe
   visible), and the viewport maps the wider range; small viewports are unchanged. The 2D engines, display capture
   and downsample use the middle; video.c's widen() puts the extra 3D (or the backdrop) around the composed screen.
   The touch screen keeps its 256x192 mapping. The screen with the 3D can be either one; with 3D on both screens
-  both widen (never taller: the game's two views are halves of one, taller ones would overlap).
+  both widen (never taller: the game's two views are halves of one, taller ones would overlap). 2D effects over
+  the 3D (blends, fades, tints, gradients) continue into the extra area: per frame, engine A is also rendered over a
+  black, a white and an empty 3D layer (edges_keep), giving at each edge pixel out = b + a * 3D (and what shows
+  without 3D); the extra area uses its row's (or column's) edge pixel, except where opaque 2D covers the edge.
 - High frame rate (video.c, gpu3d.c): the game logic stays at 60 (it counts frames); frames in between are
   presented on a steady grid while the game waits for VBlank (hw_halt), interpolated between the last two game
   frames, so everything is shown one game frame late. 3D: each list is also recorded before clipping (object-space
@@ -231,9 +241,19 @@ found no other case; variadic functions are safe (gcc pushes the unnamed registe
   (Windows; Linux: only with NDOGS_FPS), adapting down to what the machine manages. 3D on both screens (the intro:
   the game swaps the screens every frame and shows each one's 3D on the other through display capture): video.c
   keeps the last four frames (registers, OAM, the list each showed; gpu3d keeps four lists) and renders each
-  screen itself, as engine A from its own two frames (0 and 2, 1 and 3), two frames late. While interpolating one
+  screen itself, as engine A from its own two frames (0 and 2, 1 and 3), two frames late. The mode is sticky (on
+  after three swaps in a row, off after two frames without), so a hiccup doesn't change the screens' size; the
+  VBlank raster is skipped then too (the captures aren't used: compose_now draws both screens). While interpolating one
   screen, the swapped list isn't rasterised at VBlank (gx_take_swapped) unless display capture needs it. Measured
-  at Home, 2x: 120 fps presented, game 60, ~3 ms per frame in between; the intro (two renders per frame) ~60 here.
+  at Home, 2x: 120 fps presented, game 60, ~3 ms per frame in between. Grid: a frame may start up to the VBlank
+  (and overrun it; the game's schedule catches up); a late slot is shown late but the grid keeps its rate (reset
+  only when two periods behind); the game's own frame presents only if nothing went out for 1.5 periods.
+  Interpolation runs only while it pays: a frame in between must cost under 60% of a game frame, and each second
+  it must have shown at least 64 frames per 60 game frames; else it is off (the game's own 60 are shown) and
+  retried after ~13 s. Maximised on a 1920x1009 window here: 3x, 60 fps, not interpolated; at the default size
+  72 fps (the monitor's rate). So
+  72/120/144 targets are hit exactly (intro included); with the view 1.78 wide Home ~105, the intro ~60. If the
+  real frame is shown after its raster was skipped (a hitch), its 3D is drawn then (raster_skipped).
   `NDOGS_SHOT` also saves what is shown (shot_2<frame>) and the halfway frame (shot_1<frame>); `NDOGS_ILOG=1`
   per-frame costs.
 - The renderers (gpu2d/gpu3d/video/window.c) build with SSE2 floating point on 32-bit x86 (x87 float-to-int

@@ -1,5 +1,6 @@
-/* The window: both DS screens, stacked, side by side or whichever fits the window's shape better (F9, the default:
- * the layout follows the window as it is resized), scaled to the window keeping the aspect ratio, stretched
+/* The window: both DS screens, stacked (the default), side by side or whichever fills the window more (F9: auto
+ * follows the window as it is resized), scaled to the window keeping the aspect ratio (the 3D screen's view widened
+ * or made taller to fill it, see window_view), stretched
  * to fill it, or at the largest whole multiple (F10); F8 cycles the internal resolution (auto: the window's size, or
  * 1-4x, NDOGS_SCALE). The mouse on the bottom screen is the stylus. Keyboard: arrows = D-pad, Z = A, X = B, A = Y, S = X, Q = L,
  * W = R, Enter = Start, Shift (or Backspace) = Select, F11 = full screen (Windows). Gamepads: XInput on Windows
@@ -39,7 +40,7 @@ static u32 keys_down;                     /* pressed keyboard keys as KEY_ bits 
 static u32 pad_down;                      /* pressed gamepad buttons as KEY_ bits */
 static int win_w, win_h;                  /* client size */
 static int layout;                        /* 0 stacked, 1 side by side (in use: see layout_mode) */
-static int layout_mode = 2;               /* 0 stacked, 1 side by side, 2 whichever fits the window better */
+static int layout_mode;                   /* 0 stacked (default), 1 side by side, 2 whichever fills the window more */
 static int aspect;                        /* 0 keep, 1 stretch, 2 whole multiples */
 static int scale_req = -1;               /* internal resolution 1-MAXS, 0 auto */
 static int filter_linear = 1;             /* GPU presenter: bilinear (1) or nearest (0) scaling, F7 */
@@ -52,13 +53,34 @@ static void fit(int *x, int *y, int *w, int *h);
 
 /* Internal resolution. Auto (the default): the smallest whole multiple of the DS resolution that covers the size a
  * screen is shown at, so the picture is only ever scaled down a little (sharp) instead of up (blurry); up to 4x
- * (2x on ARM). NDOGS_SCALE=1-4 or F8 fixes it. */
+ * (2x on ARM), and lowered while the machine can't keep the game at full speed (window_slow; a resize tries again).
+ * NDOGS_SCALE=1-4 or F8 fixes it. */
+static int auto_cap = AUTO_MAXS;
+int window_scale(void);
+
+/* video.c: the game can't keep up at this resolution: auto goes one step down */
+void window_slow(void)
+{
+    int s = window_scale();
+    if (!scale_req && s > 1) {
+        auto_cap = s - 1;
+        fprintf(stderr, "window: too slow at %dx, auto resolution now %dx\n", s, auto_cap);
+    }
+}
+
+/* video.c: the game has kept up for a while: auto may go one step up again (to what the window needs) */
+void window_fast(void)
+{
+    if (!scale_req && auto_cap < AUTO_MAXS)
+        auto_cap++;
+}
+
 int window_scale(void)
 {
     if (scale_req < 0) {
-        /* starting layout and aspect mode: NDOGS_LAYOUT=0 stacked / 1 side by side / 2 auto (default),
+        /* starting layout and aspect mode: NDOGS_LAYOUT=0 stacked (default) / 1 side by side / 2 auto,
          * NDOGS_ASPECT=0 keep / 1 stretch / 2 whole multiples */
-        layout_mode = getenv("NDOGS_LAYOUT") ? atoi(getenv("NDOGS_LAYOUT")) % 3 : 2;
+        layout_mode = getenv("NDOGS_LAYOUT") ? atoi(getenv("NDOGS_LAYOUT")) % 3 : 0;
         layout = layout_mode == 1;
         aspect = getenv("NDOGS_ASPECT") ? atoi(getenv("NDOGS_ASPECT")) % 3 : 0;
         scale_req = getenv("NDOGS_SCALE") ? atoi(getenv("NDOGS_SCALE")) : 0;
@@ -71,7 +93,7 @@ int window_scale(void)
         fit(&x, &y, &w, &h);
         sh = h * DS_H / (layout ? (top_dh > bot_dh ? top_dh : bot_dh) : top_dh + bot_dh);  /* a DS screen's height */
         s = (sh + DS_H - 1) / DS_H;
-        return s < 1 ? 1 : s > AUTO_MAXS ? AUTO_MAXS : s;
+        return s < 1 ? 1 : s > auto_cap ? auto_cap : s;
     }
     return scale_req;
 }
@@ -483,7 +505,7 @@ static void gl_submit(void)
 }
 static int fullscreen;
 static RECT saved_rect;
-#define WSTYLE (WS_OVERLAPPEDWINDOW & ~WS_MAXIMIZEBOX)
+#define WSTYLE WS_OVERLAPPEDWINDOW
 
 static u32 key_bit(WPARAM vk)
 {
@@ -532,6 +554,9 @@ static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
     case WM_SIZE:
         win_w = LOWORD(lp);
         win_h = HIWORD(lp);
+        auto_cap = AUTO_MAXS;  /* a new size: try the full resolution again */
+        if (getenv("NDOGS_VLOG"))
+            fprintf(stderr, "window: %d x %d, layout %d, scale %d\n", win_w, win_h, layout, window_scale());
         W.InvalidateRect(h, 0, TRUE);
         return 0;
     case WM_LBUTTONDOWN:
@@ -982,6 +1007,8 @@ int window_present(const u32 *top, int tw, int th, const u32 *bottom, int bw, in
             mouse_at(e.input.x, e.input.y);
             break;
         case ConfigureNotify:
+            if (win_w != e.conf.width || win_h != e.conf.height)
+                auto_cap = AUTO_MAXS;  /* a new size: try the full resolution again */
             win_w = e.conf.width;
             win_h = e.conf.height;
             break;
