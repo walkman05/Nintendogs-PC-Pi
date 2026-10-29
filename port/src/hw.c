@@ -676,19 +676,39 @@ double now_ms(void)
     return (double)c.QuadPart * 1000.0 / (double)f.QuadPart;
 }
 /* Precise wait: Sleep() is 15.6 ms granular unless the timer resolution is raised (winmm, loaded at run time like
- * user32); the last 2 ms are spun so a frame starts on time. */
+ * user32), and Windows 11 ignores that while the window is hidden (behind others, minimised: the game ran at 30), so
+ * a high-resolution waitable timer (Windows 10 1803+) is used where there is one; the last 2 ms are spun so a frame
+ * starts on time. */
 static void sleep_ms(double ms)
 {
     static int res_set;
+    static HANDLE timer;
     double end = now_ms() + ms;
     if (!res_set) {
         HMODULE w = LoadLibraryA("winmm.dll");
         FARPROC f = w ? GetProcAddress(w, "timeBeginPeriod") : 0;
+        HANDLE (WINAPI *create)(LPSECURITY_ATTRIBUTES, LPCWSTR, DWORD, DWORD);
         if (f)
             ((UINT(WINAPI *)(UINT))f)(1);
+        BOOL (WINAPI *setinfo)(HANDLE, int, LPVOID, DWORD);
+        *(FARPROC *)&create = GetProcAddress(GetModuleHandleA("kernel32.dll"), "CreateWaitableTimerExW");
+        if (create)
+            timer = create(0, 0, 2 /* CREATE_WAITABLE_TIMER_HIGH_RESOLUTION */, 0x1F0003 /* TIMER_ALL_ACCESS */);
+        /* no power throttling ("efficiency mode": low clocks, coarse timers) when Windows thinks the game is in the
+         * background, e.g. started from a script: it ran at 30 fps */
+        *(FARPROC *)&setinfo = GetProcAddress(GetModuleHandleA("kernel32.dll"), "SetProcessInformation");
+        if (setinfo) {
+            ULONG pt[3] = { 1 /* version */, 1 | 4 /* EXECUTION_SPEED | IGNORE_TIMER_RESOLUTION */, 0 /* off */ };
+            setinfo(GetCurrentProcess(), 4 /* ProcessPowerThrottling */, pt, sizeof pt);
+        }
         res_set = 1;
     }
-    if (ms > 2)
+    if (ms > 2 && timer) {
+        LARGE_INTEGER due;
+        due.QuadPart = -(LONGLONG)((ms - 2) * 10000.0);  /* 100 ns units, relative */
+        if (SetWaitableTimer(timer, &due, 0, 0, 0, FALSE))
+            WaitForSingleObject(timer, (DWORD)ms + 1);
+    } else if (ms > 2)
         Sleep((DWORD)(ms - 2));
     while (now_ms() < end)
         Sleep(0);

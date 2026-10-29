@@ -773,14 +773,45 @@ void video_present_interp(void)
  * shown in the coming frame is rasterised now, before the game can submit and swap another list. */
 static int swapped;
 static double t3d;
+/* The internal resolution changes (auto resolution, a resize): the kept high resolution captures go to the new
+ * scale, nearest pixel, instead of being dropped. A screen can show the last capture for a long time (after the
+ * intro the top screen is a still of its last frame): without them it fell back to native pixels, not widened. */
+static void img_rescale(u32 *img, int w, int h, int from, int to)  /* w x h DS pixels */
+{
+    static u32 tmp[DS_W * DS_H * WMAX * MAXS * MAXS];
+    int x, y, W = w * to, H = h * to, sw = w * from;
+    for (y = 0; y < H; y++)
+        for (x = 0; x < W; x++)
+            tmp[y * W + x] = img[(y * from / to) * sw + x * from / to];
+    memcpy(img, tmp, (size_t)W * H * 4);
+}
+
+static void caps_rescale(int from, int to)
+{
+    int b;
+    for (b = 0; b < 4; b++) {
+        HiCapture *k = &hicap[b];
+        if (k->valid && k->s == from && to > 1) {
+            img_rescale(k->img, k->w, k->h, from, to);
+            k->s = to;
+        } else
+            k->valid = 0;
+        if (wcap[b] && wcap[b]->valid && wcap[b]->S == from) {
+            WideCap *c = wcap[b];
+            img_rescale(c->img, c->W / from, c->H / from, from, to);
+            c->S = to, c->W = c->W / from * to, c->H = c->H / from * to;
+        }
+    }
+}
+
 void video_vblank(void)
 {
     if (gx_swap_pending()) {
         double t0 = now_ms();
         int want = window_scale();
         if (want != gx_scale()) {
+            caps_rescale(gx_scale(), want);
             gx_set_scale(want);
-            memset(hicap, 0, sizeof hicap);
         }
         hw_io_snapshot(io);
         memcpy(io3d, io, sizeof io3d);
