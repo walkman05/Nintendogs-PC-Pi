@@ -203,11 +203,11 @@ found no other case; variadic functions are safe (gcc pushes the unnamed registe
   dlopen on Linux; +6 dB output gain (`NDOGS_VOLUME=<percent>`), `NDOGS_WAV=<file>` records, `NDOGS_MUTE=1`.
 - `port/src/window.c`: resizable window (aspect kept, F11 full screen on Windows), XInput gamepads, X11 window on
   Linux via dlopen (not yet run on Linux). `NDOGS_SNDLOG=1` logs sound commands.
-- Internal resolution (`NDOGS_SCALE=1-4`, default auto, F8 cycles auto/1-4: the smallest whole multiple of the
-  DS screen that covers its size in the window, up to 4x, 2x on ARM, so the presenter only scales down a little:
-  sharp, not blurry; lowered a step while the game can't keep 60 (more than 12 of 60 frames over 20 ms, after
-  interpolation was turned off first: window_slow), raised again after 10 s at full speed or on a resize
-  (window_fast)): gpu3d rasterises at 256S x 192S in parallel
+- Internal resolution (`NDOGS_SCALE=1-4`, default auto, F8 cycles auto/1-4): auto is fixed from the monitor, the
+  smallest whole multiple of the DS screen that covers a screen's height with both stacked on it (1080 lines: 3x),
+  up to 4x (Raspberry Pi: 2x on a Pi 4/400/5, 1x on a Pi 3B); it never changes with the window or the load (a scale
+  change mid-scene made screens showing old display captures lose their resolution and width). Without a monitor
+  size (Linux) it follows the window. gpu3d rasterises at 256S x 192S in parallel
   scanline bands (`port/src/workers.c`, `NDOGS_THREADS`), plus a downsampled native frame for the 2D engines.
   gpu2d records each pixel's source (`gpu2d_src`: unchanged 3D, or a 1:1 direct-colour bitmap pixel with its VRAM
   address); video.c composes the screens at S x by taking those pixels from the hi-res 3D frame or from a hi-res
@@ -237,8 +237,8 @@ found no other case; variadic functions are safe (gcc pushes the unnamed registe
   cut and snaps), the way decomp PC ports interpolate final matrices (Ship of Harkinian). 2D: registers and OAM of
   both frames; sprites matched by identity (tile, palette, shape, size; nearest previous one, any slot: the game
   reuses slots) move and turn, BG scroll and rotation, blend/fade levels and master brightness interpolate;
-  anything that jumped over 64 px snaps. Rate `NDOGS_FPS`, default 120 or the monitor's refresh rate if lower
-  (Windows; Linux: only with NDOGS_FPS), adapting down to what the machine manages. 3D on both screens (the intro:
+  anything that jumped over 64 px snaps. Rate `NDOGS_FPS`, default the monitor's refresh rate (Windows; Linux:
+  only with NDOGS_FPS), fixed: not lowered or switched off when frames cost more. 3D on both screens (the intro:
   the game swaps the screens every frame and shows each one's 3D on the other through display capture): video.c
   keeps the last four frames (registers, OAM, the list each showed; gpu3d keeps four lists) and renders each
   screen itself, as engine A from its own two frames (0 and 2, 1 and 3), two frames late. The mode is sticky (on
@@ -251,11 +251,8 @@ found no other case; variadic functions are safe (gcc pushes the unnamed registe
   at Home, 2x: 120 fps presented, game 60, ~3 ms per frame in between. Grid: a frame may start up to the VBlank
   (and overrun it; the game's schedule catches up); a late slot is shown late but the grid keeps its rate (reset
   only when two periods behind); the game's own frame presents only if nothing went out for 1.5 periods.
-  Interpolation runs only while it pays: a frame in between must cost under 60% of a game frame, and each second
-  it must show at least as many frames as the game makes (60 per 60); else it is off (the game's own 60 are shown) and
-  retried after ~13 s. Maximised on a 1920x1009 window here: 3x, 60 fps, not interpolated; at the default size
-  72 fps (the monitor's rate). So
-  72/120/144 targets are hit exactly (intro included); with the view 1.78 wide Home ~105, the intro ~60. If the
+  (Until 2026-10 interpolation and resolution adapted to the load; that is gone: the rate is the monitor's and the
+  scale the monitor's.) Earlier measurements: 72/120/144 targets are hit exactly (intro included); with the view 1.78 wide Home ~105, the intro ~60. If the
   real frame is shown after its raster was skipped (a hitch), its 3D is drawn then (raster_skipped).
   `NDOGS_SHOT` also saves what is shown (shot_2<frame>) and the halfway frame (shot_1<frame>); `NDOGS_ILOG=1`
   per-frame costs.

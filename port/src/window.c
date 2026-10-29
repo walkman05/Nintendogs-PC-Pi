@@ -66,30 +66,15 @@ static int auto_maxs = 1;
 #define AUTO_MAXS MAXS
 #endif
 
-/* Internal resolution. Auto (the default): the smallest whole multiple of the DS resolution that covers the size a
- * screen is shown at, so the picture is only ever scaled down a little (sharp) instead of up (blurry); up to 4x
- * (on a Raspberry Pi 2x on a Pi 4/400/5, 1x on a Pi 3B), and lowered while the machine can't keep the game at full
- * speed (window_slow; a resize tries again).
- * NDOGS_SCALE=1-4 or F8 fixes it. */
+/* Internal resolution. Auto (the default): fixed from the monitor, the smallest whole multiple of the DS resolution
+ * that covers a screen's height when both are stacked on it full screen (1080 lines: 3x), so the picture is only
+ * scaled down a little (sharp); up to 4x (on a Raspberry Pi 2x on a Pi 4/400/5, 1x on a Pi 3B). It never changes
+ * with the window or the load (that made screens showing old display captures change resolution). Without a
+ * monitor size (Linux): from the window, as large as it gets. NDOGS_SCALE=1-4 or F8 fixes it. */
 static int auto_cap = MAXS;  /* (set from AUTO_MAXS on the first window_scale) */
+static int auto_mon;         /* from the monitor (0: from the window) */
 int window_scale(void);
-
-/* video.c: the game can't keep up at this resolution: auto goes one step down */
-void window_slow(void)
-{
-    int s = window_scale();
-    if (!scale_req && s > 1) {
-        auto_cap = s - 1;
-        fprintf(stderr, "window: too slow at %dx, auto resolution now %dx\n", s, auto_cap);
-    }
-}
-
-/* video.c: the game has kept up for a while: auto may go one step up again (to what the window needs) */
-void window_fast(void)
-{
-    if (!scale_req && auto_cap < AUTO_MAXS)
-        auto_cap++;
-}
+static int monitor_height(void);
 
 int window_scale(void)
 {
@@ -105,7 +90,15 @@ int window_scale(void)
 #endif
         auto_cap = AUTO_MAXS;
         scale_req = scale_req < 0 ? 0 : scale_req > MAXS ? MAXS : scale_req;
+        {
+            int mh = monitor_height(), s = (mh + DS_H * 2 - 1) / (DS_H * 2);
+            auto_mon = mh <= 0 ? 0 : s < 1 ? 1 : s > auto_cap ? auto_cap : s;
+            if (auto_mon)
+                fprintf(stderr, "window: %d-line monitor: 3D and screens at %dx\n", mh, auto_mon);
+        }
     }
+    if (!scale_req && auto_mon)
+        return auto_mon;
     if (!scale_req) {
         int x, y, w, h, sh, s;
         if (win_w <= 0 || win_h <= 0)
@@ -673,6 +666,19 @@ static void poll_pad(void)
 }
 
 /* the main monitor's refresh rate (frame interpolation, video.c); 0 if unknown */
+static int monitor_height(void)
+{
+    DEVMODEA dm;
+    HMODULE u = LoadLibraryA("user32.dll");
+    BOOL (WINAPI *enum_settings)(LPCSTR, DWORD, DEVMODEA *) =
+        u ? (BOOL (WINAPI *)(LPCSTR, DWORD, DEVMODEA *))GetProcAddress(u, "EnumDisplaySettingsA") : 0;
+    memset(&dm, 0, sizeof dm);
+    dm.dmSize = sizeof dm;
+    if (!enum_settings || !enum_settings(0, ENUM_CURRENT_SETTINGS, &dm))
+        return 0;
+    return (int)dm.dmPelsHeight;
+}
+
 int window_refresh_hz(void)
 {
     DEVMODEA dm;
@@ -1087,5 +1093,6 @@ int window_refresh_hz(void)
 {
     return 0;
 }
+static int monitor_height(void) { return 0; }
 
 #endif

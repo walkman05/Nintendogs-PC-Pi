@@ -263,10 +263,8 @@ static void interp_init(void)
     done = 1;
     if (getenv("NDOGS_FPS"))
         hz = atoi(getenv("NDOGS_FPS"));
-    else {  /* default: 120, or the monitor's rate if lower */
+    else  /* default: the monitor's rate */
         hz = window_refresh_hz();
-        hz = hz > 120 ? 120 : hz;
-    }
     i_period = hz > 60 ? 1000.0 / hz : 0;
     if (i_period)
         fprintf(stderr, "video: up to %d fps (game logic 60, frames in between interpolated)\n", hz);
@@ -318,34 +316,6 @@ static void interp_keep(void)
     f->time = now_ms();
     f->seq = gx_list_seq();
     f->edges = 0;
-    if (fh_count >= 2) {  /* the game falling behind (60 frames taking over 1.05 s: under ~57 fps; single slow
-                           * frames don't count, the schedule catches up after them): first no interpolation for a
-                           * few seconds, then a lower resolution; ten seconds at full speed: one higher */
-        static int frames, slow, good;
-        static unsigned presents0;
-        static double t0;
-        extern void window_slow(void), window_fast(void);
-        if (!frames)
-            t0 = f->time;
-        if (++frames == 61) {
-            frames = 0;
-            slow = f->time - t0 > 60 * 1000.0 / 60 * 1.05 ? 13 : 0;
-            int on = i_period && i_cost * 1.25 <= 1000.0 / 60 * 0.6;
-            if (on && i_presents - presents0 < 60)
-                i_cost = 40.0;  /* interpolating, but showing no more frames than the game makes: off for now */
-            presents0 = i_presents;
-            if (slow > 12) {
-                if (i_period && i_cost * 1.25 <= 1000.0 / 60 * 0.6)
-                    i_cost = 40.0;  /* interpolation off (decays: tried again in ~13 s) */
-                else
-                    window_slow();
-                good = 0;
-            } else if (++good >= 10) {
-                window_fast();
-                good = 0;
-            }
-        }
-    }
     if ((gx_wide_px() > DS_W || gx_tall_px() > DS_H) && has3d(0))
         edges_keep(f);
     if (fh_count >= 2) {  /* 3D on both screens: on after three swaps in a row, off after two frames without */
@@ -726,21 +696,19 @@ static int present(const u32 *top, const u32 *bottom, int S)
     int act = interp_active(), tw, th, bw, bh, r, in = compose_now(t0, !act, &top, &tw, &th, &bottom, &bw, &bh, S);
     r = window_present(top, tw, th, bottom, bw, bh, DS_W * S, DS_H * S);
     i_presents++;
-    if (in && act) {  /* adapt the rate to the machine: an interpolated frame must leave time for the game */
+    if (in && act) {  /* what a frame in between costs (NDOGS_JANK) */
         double c = now_ms() - t0;
         i_cost = i_cost ? i_cost * 0.9 + c * 0.1 : c;
     }
     return r;
 }
 
-/* While interpolating, frames are presented on a steady grid of the target period (or what the machine manages),
- * independent of the game's frames, which only bring new data; the game's own present is skipped (video_frame). */
+/* While interpolating, frames are presented on a steady grid of the target period (the monitor's rate: fixed, not
+ * adapted to the machine), independent of the game's frames, which only bring new data; the game's own present is
+ * skipped (video_frame). */
 static int interp_active(void)
 {
-    /* only while a frame in between costs clearly less than a game frame: else the game's own frames are shown
-     * (60 fps beats interpolated frames that can't keep up). The cost estimate decays while off (video_frame), so
-     * this is tried again now and then (a smaller window, a calmer scene). */
-    if (!i_period || !i_top || i_cost * 1.25 > 1000.0 / 60 * 0.6)
+    if (!i_period || !i_top)
         return 0;
     if (dual())
         return fr(0)->time - fr(2)->time <= 100.0 && fr(1)->time - fr(3)->time <= 100.0;
@@ -751,7 +719,7 @@ static int interp_active(void)
  * may overrun it, the game's schedule catches up) */
 double video_next_present(double deadline)
 {
-    double p = i_period, c = i_cost * 1.25, step = c > p ? c : p, now;
+    double step = i_period, now;
     if (!interp_active())
         return 0;
     now = now_ms();
@@ -763,8 +731,7 @@ double video_next_present(double deadline)
 
 void video_present_interp(void)
 {
-    double p = i_period, c = i_cost * 1.25;
-    i_last += c > p ? c : p;
+    i_last += i_period;
     if (!present(i_top, i_bottom, i_S))
         exit(0);
 }
@@ -984,10 +951,7 @@ void video_frame(void)
          * period and a half (a slow machine): then this one, so something is always shown and the window kept
          * alive. (Presenting every frame here would pin the grid to the game's frames: at 72 Hz no slot would
          * ever fit before the next VBlank.) */
-        double step = i_cost * 1.25 > i_period ? i_cost * 1.25 : i_period;
-        if (i_period && i_cost * 1.25 > 1000.0 / 60 * 0.6)
-            i_cost *= 0.998;  /* interpolation off for its cost: try again in ~13 s */
-        if (!interp_active() || now_ms() - i_last > step * 1.5) {
+        if (!interp_active() || now_ms() - i_last > i_period * 1.5) {
             if (!present(top, bottom, S))
                 exit(0);
             i_last = now_ms();
