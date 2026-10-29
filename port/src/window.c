@@ -562,7 +562,11 @@ typedef struct {
 typedef struct {
     int type; unsigned long serial; int send_event; void *display; XID event, window; int x, y, width, height;
 } XConfigureEv;
-typedef union { int type; XAnyEvent any; XInputEv input; XConfigureEv conf; long pad[24]; } XEv;
+typedef struct {
+    int type; unsigned long serial; int send_event; void *display; XID window; unsigned long message_type; int format;
+    long l[5];
+} XClientEv;
+typedef union { int type; XAnyEvent any; XInputEv input; XConfigureEv conf; XClientEv client; long pad[24]; } XEv;
 typedef struct {
     int width, height, xoffset, format; char *data; int byte_order, bitmap_unit, bitmap_bit_order, bitmap_pad, depth,
         bytes_per_line, bits_per_pixel; unsigned long red_mask, green_mask, blue_mask; void *obdata;
@@ -687,8 +691,9 @@ int window_present(const u32 *top, const u32 *bottom, int sw, int sh)
             win_w = e.conf.width;
             win_h = e.conf.height;
             break;
-        case ClientMessage:
-            closed = 1;
+        case ClientMessage:  /* only the window manager's close request */
+            if (e.client.format == 32 && (unsigned long)e.client.l[0] == wm_delete)
+                closed = 1;
             break;
         }
     }

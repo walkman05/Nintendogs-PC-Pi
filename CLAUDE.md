@@ -182,6 +182,11 @@ finds these from the original asm (registers read before written, or forwarded t
 10 more it found are fixed (the dog material colour setters among them). What it still lists was reviewed and is
 harmless: func_0204160c/02062700/020627c0/020636d0 take a 64-bit argument (two registers), and
 func_0208cc2c/0208cdfc/0208db60/020fdb24 leave don't-care registers for callees called in loops.
+ARM-only hazard: reading adjacent parameters through one parameter's address (`*(P2 *)&b`). x86 stack
+arguments are in order, but ARM gcc spills r0-r3 downwards, so `&b + 1` is the previous parameter. func_0208c98c
+forwarded the dog model's file object as the file id (dogs moved without skeletal animation on the Pi); it now
+passes the words explicitly under NDOGS_PC. A scan of every ARM object for multi-word loads from an argument slot
+found no other case; variadic functions are safe (gcc pushes the unnamed registers next to the stack arguments).
 
 ## Audio and input (milestone 6)
 - `port/src/snd.c`: the ARM7 sound driver stand-in (commands from PXI channel 7 via hw.c): 16 players with SSEQ
